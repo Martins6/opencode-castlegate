@@ -1,0 +1,6 @@
+node_modules
+dist
+.opencode/intent
+*.log
+.DS_Store
+.sbeads/
