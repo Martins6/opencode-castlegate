@@ -1,4 +1,4 @@
-# castlegate
+# opencode-castlegate
 
 OpenCode plugin that **auto-approves tool calls when they match your session intent**, and surfaces mismatches to you before execution.
 
@@ -13,8 +13,8 @@ This repo is for development against a host opencode installation. The plugin is
 ### 1. Clone and install dependencies
 
 ```bash
-git clone https://github.com/Martins6/castlegate.git
-cd castlegate
+git clone https://github.com/Martins6/opencode-castlegate.git
+cd opencode-castlegate
 npm install
 ```
 
@@ -29,7 +29,7 @@ Tests use Node's built-in test runner via `--experimental-strip-types`. bun is *
 
 ### 3. Link it into a host project
 
-Pick a project where you want to use castlegate, then:
+Pick a project where you want to use opencode-castlegate, then:
 
 ```bash
 # from inside the host project
@@ -42,7 +42,7 @@ Create `.opencode/package.json` with a `file:` dependency:
 ```json
 {
   "dependencies": {
-    "castlegate": "file:/absolute/path/to/castlegate"
+    "opencode-castlegate": "file:/absolute/path/to/opencode-castlegate"
   }
 }
 ```
@@ -50,20 +50,20 @@ Create `.opencode/package.json` with a `file:` dependency:
 Copy the plugin entry into the host's plugin directory:
 
 ```bash
-cp /absolute/path/to/castlegate/src/index.ts /path/to/host/.opencode/plugins/castlegate.ts
+cp /absolute/path/to/opencode-castlegate/src/index.ts /path/to/host/.opencode/plugins/opencode-castlegate.ts
 ```
 
 OpenCode runs `bun install` on startup to resolve `.opencode/package.json`, then loads every `*.ts` file in `.opencode/plugins/`.
 
 ### 4. Configure
 
-Add the `castlegate` block to your host project's `opencode.json`:
+Add the `opencode-castlegate` block to your host project's `opencode.json`:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["castlegate"],
-  "castlegate": {
+  "plugin": ["opencode-castlegate"],
+  "opencode-castlegate": {
     "model": { "providerID": "anthropic", "modelID": "claude-haiku-4-5" },
     "intent": { "maxChars": 4000, "compactThreshold": 0.8, "maxRecentMessages": 20 },
     "validate": {
@@ -104,13 +104,13 @@ intent_context tool result: ...
 After editing files in this repo, re-run the host project's opencode (it auto-reloads plugins on session start). To iterate without restarting opencode:
 
 1. Edit files here.
-2. Re-run `cp src/index.ts /path/to/host/.opencode/plugins/castlegate.ts`.
+2. Re-run `cp src/index.ts /path/to/host/.opencode/plugins/opencode-castlegate.ts`.
 3. Restart the opencode session in the host project.
 
 ## Project layout
 
 ```
-castlegate/
+opencode-castlegate/
 ├── SPEC.md                   Architecture + behavioral contract
 ├── README.md                 This file (dev install)
 ├── package.json

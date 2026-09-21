@@ -1,6 +1,6 @@
-# castlegate configuration
+# opencode-castlegate configuration
 
-The `castlegate` block in `opencode.json` (or `.opencode/opencode.json`) accepts the following keys. Defaults are shown.
+The `opencode-castlegate` block in `opencode.json` (or `.opencode/opencode.json`) accepts the following keys. Defaults are shown.
 
 ```ts
 {
@@ -40,7 +40,7 @@ The `castlegate` block in `opencode.json` (or `.opencode/opencode.json`) accepts
 
 ```json
 {
-  "castlegate": {
+  "opencode-castlegate": {
     "model": { "providerID": "anthropic", "modelID": "claude-haiku-4-5" }
   }
 }

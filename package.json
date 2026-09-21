@@ -1,5 +1,5 @@
 {
-  "name": "castlegate",
+  "name": "opencode-castlegate",
   "version": "0.1.0",
   "description": "OpenCode plugin that auto-approves tool calls when they match the user's session intent, validated by a lightweight model.",
   "type": "module",
