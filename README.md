@@ -8,7 +8,7 @@ See [`SPEC.md`](./SPEC.md) for the full architecture and behavioral contract. Se
 
 ## Dev install (local)
 
-This repo is for development against a host opencode installation. The plugin is loaded as a single TypeScript file copied into your project's `.opencode/plugins/` directory.
+This repo is for development against a host OpenCode installation. The plugin is loaded as a package from the host project's `.opencode/package.json`. Do not copy individual source files into `.opencode/plugins/`: the entry point imports the rest of the source tree.
 
 ### 1. Clone and install dependencies
 
@@ -33,7 +33,6 @@ Pick a project where you want to use opencode-castlegate, then:
 
 ```bash
 # from inside the host project
-mkdir -p .opencode/plugins
 mkdir -p .opencode
 ```
 
@@ -47,13 +46,7 @@ Create `.opencode/package.json` with a `file:` dependency:
 }
 ```
 
-Copy the plugin entry into the host's plugin directory:
-
-```bash
-cp /absolute/path/to/opencode-castlegate/src/index.ts /path/to/host/.opencode/plugins/opencode-castlegate.ts
-```
-
-OpenCode runs `bun install` on startup to resolve `.opencode/package.json`, then loads every `*.ts` file in `.opencode/plugins/`.
+OpenCode runs `bun install` on startup to resolve `.opencode/package.json`, then loads the package named in the `plugin` array. No `.opencode/plugins/` file is needed for this package. If you previously copied `opencode-castlegate.ts` into that directory, remove it so the plugin is not registered twice.
 
 ### 4. Configure
 
@@ -101,11 +94,9 @@ intent_context tool result: ...
 
 ### 6. Iterating
 
-After editing files in this repo, re-run the host project's opencode (it auto-reloads plugins on session start). To iterate without restarting opencode:
+After editing files in this repo, restart the host project's OpenCode session. It reruns the `.opencode` dependency install and reloads the package on startup.
 
-1. Edit files here.
-2. Re-run `cp src/index.ts /path/to/host/.opencode/plugins/opencode-castlegate.ts`.
-3. Restart the opencode session in the host project.
+If the host project is still using a stale local dependency, run `bun install` from its `.opencode/` directory before restarting the session.
 
 ## Project layout
 

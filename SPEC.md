@@ -109,7 +109,7 @@ Action required: surface this to the user via the question tool and wait for exp
 
 ### 4.4 Config
 
-See `docs/config.md`. Top-level `castlegate` key in `opencode.json`.
+See `docs/config.md`. The plugin is loaded as `opencode-castlegate` and its options use the top-level `opencode-castlegate` key in `opencode.json`.
 
 ## 5. Behavioral contracts
 
