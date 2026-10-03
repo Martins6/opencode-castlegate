@@ -6,7 +6,7 @@ test("parseConfig accepts minimal config and fills defaults", () => {
   const cfg = parseConfig({
     model: { providerID: "anthropic", modelID: "claude-haiku-4-5" },
   });
-  assert.equal(cfg.model.providerID, "anthropic");
+  assert.equal(cfg.model?.providerID, "anthropic");
   assert.equal(cfg.intent.maxChars, 4000);
   assert.equal(cfg.intent.compactThreshold, 0.8);
   assert.equal(cfg.intent.maxRecentMessages, 20);
@@ -42,8 +42,11 @@ test("parseConfig respects user overrides", () => {
   assert.equal(cfg.logging, false);
 });
 
-test("parseConfig rejects missing model", () => {
-  assert.throws(() => parseConfig({}));
+test("parseConfig accepts missing model for zero-config install", () => {
+  const cfg = parseConfig({});
+  assert.equal(cfg.model, undefined);
+  assert.equal(cfg.intent.maxChars, 4000);
+  assert.equal(cfg.validate.mode, "llm");
 });
 
 test("safeParseConfig returns ok:false with zod error on bad input", () => {

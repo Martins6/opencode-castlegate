@@ -241,5 +241,3 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
 };
 
 export default CastlegatePlugin;
-
-export { CastlegateIntentMismatchError, CASTLEGATE_TAG };
