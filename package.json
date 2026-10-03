@@ -1,6 +1,6 @@
 {
   "name": "opencode-castlegate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode plugin that auto-approves tool calls when they match the user's session intent, validated by a lightweight model.",
   "type": "module",
   "main": "./src/index.ts",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types --test-reporter=spec test/store.test.ts test/validate.test.ts test/intent.test.ts test/config.test.ts test/errors.test.ts"
+    "test": "node --test --experimental-strip-types --test-reporter=spec test/store.test.ts test/validate.test.ts test/intent.test.ts test/config.test.ts test/errors.test.ts test/prompt-body.test.ts"
   },
   "keywords": [
     "opencode",
@@ -20,6 +20,21 @@
     "auto-approve"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Martins6/opencode-castlegate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Martins6/opencode-castlegate/issues"
+  },
+  "homepage": "https://github.com/Martins6/opencode-castlegate#readme",
+  "files": [
+    "src",
+    "README.md",
+    "SPEC.md",
+    "docs",
+    "LICENSE"
+  ],
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.0",
     "zod": "4.1.8"

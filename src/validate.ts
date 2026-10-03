@@ -7,6 +7,7 @@ import {
   summarizeArgs,
   type IntentValidateResult,
 } from "./prompts/intent-validate.ts";
+import { buildSidecarPromptBody } from "./prompt-body.ts";
 
 type PluginClient = PluginInput["client"];
 
@@ -107,12 +108,7 @@ async function callValidator(
 ): Promise<string> {
   const result = await client.session.prompt({
     path: { id: sidecarId },
-    body: {
-      model: { providerID: cfg.model.providerID, modelID: cfg.model.modelID },
-      system:
-        "You are a precise, terse JSON-producing subagent. Respond only with the requested JSON, no preamble, no fences.",
-      parts: [{ type: "text", text: prompt }],
-    },
+    body: buildSidecarPromptBody(cfg, prompt),
   });
 
   const parts = result.data?.parts ?? [];

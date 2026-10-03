@@ -4,9 +4,9 @@ The `opencode-castlegate` block in `opencode.json` (or `.opencode/opencode.json`
 
 ```ts
 {
-  model: {
-    providerID: string,         // required
-    modelID: string,            // required
+  model?: {
+    providerID: string,         // optional — defaults to opencode's session-default model
+    modelID: string,            // optional — defaults to opencode's session-default model
   },
   intent: {
     maxChars: number,           // default 4000 — hard cap on digest size
@@ -28,6 +28,8 @@ The `opencode-castlegate` block in `opencode.json` (or `.opencode/opencode.json`
 }
 ```
 
+> **Zero-config default.** When `model` is omitted, the plugin omits the `model` field from `client.session.prompt` and lets opencode resolve the session-default model. This is the recommended starting point — most users will never need to set `model`. Override only if you want to pin a specific fast/cheap model for the lightweight validator.
+
 ## Behavior notes
 
 - **`validate.tools`** is the strongest signal: set it to gate only the tools you consider high-risk. If unset, every tool is validated (subject to `skip`).
@@ -37,6 +39,10 @@ The `opencode-castlegate` block in `opencode.json` (or `.opencode/opencode.json`
 - **`storage.directory`** is resolved against the plugin's working directory at runtime, so you can point it outside the project if desired.
 
 ## Minimal config
+
+Zero-config (no `opencode-castlegate` block at all) works out of the box — the plugin uses opencode's session-default model.
+
+To pin a specific fast/cheap validator model:
 
 ```json
 {
