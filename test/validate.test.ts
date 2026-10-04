@@ -58,6 +58,9 @@ test("buildIntentValidatePrompt embeds digest and tool", () => {
   assert.match(prompt, /bash/);
   assert.match(prompt, /rm -rf/);
   assert.match(prompt, /JSON/);
+  assert.match(prompt, /validation verdict/);
+  assert.match(prompt, /digest-synthesis schema is not applicable/);
+  assert.match(prompt, /\{"match": <bool>/);
 });
 
 test("summarizeArgs truncates long command", () => {

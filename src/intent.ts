@@ -53,6 +53,37 @@ export function createSidecar(): { id: string | null; pending: Promise<string> |
   return { id: null, pending: null };
 }
 
+/**
+ * Best-effort cleanup of the sidecar session. The sidecar is a hidden session
+ * that lives in opencode's global session DB; without explicit deletion it
+ * accumulates across plugin instances and host-project runs.
+ *
+ * Errors are swallowed because disposal must not throw.
+ */
+export async function disposeSidecar(
+  client: PluginClient,
+  sidecar: { id: string | null; pending: Promise<string> | null },
+): Promise<void> {
+  try {
+    // If a sidecar is mid-creation, wait briefly for it before deleting.
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const pendingId = sidecar.pending
+      ? await Promise.race<string | null>([
+          sidecar.pending.catch(() => null),
+          new Promise<string | null>((resolve) => {
+            timeout = setTimeout(() => resolve(null), 2000);
+          }),
+        ])
+      : null;
+    if (timeout) clearTimeout(timeout);
+    const id = sidecar.id ?? pendingId;
+    if (!id) return;
+    await client.session.delete({ path: { id } });
+  } catch {
+    // ignore: disposal is best-effort
+  }
+}
+
 async function fetchRecentMessages(
   client: PluginClient,
   sessionId: string,

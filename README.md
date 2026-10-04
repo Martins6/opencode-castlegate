@@ -73,6 +73,27 @@ Add the `opencode-castlegate` block to your host project's `opencode.json`:
 }
 ```
 
+> **Note on `min-release-age`.** If your npm configuration sets a release
+> age (for example, `min-release-age=7`), recent `@opencode-ai/plugin`
+> releases are intentionally hidden until they are old enough. Opencode's
+> installer may report that the version matching the CLI cannot be found.
+>
+> If you hit that error, pin a compatible version older than your configured
+> release-age window in your host project's `.opencode/package.json`. For
+> example, `1.18.32` predates the seven-day window observed in October 2026:
+>
+> ```json
+> {
+>   "dependencies": {
+>     "@opencode-ai/plugin": "1.18.32",
+>     "opencode-castlegate": "file:/absolute/path/to/opencode-castlegate"
+>   }
+> }
+> ```
+>
+> Remove this override once the CLI-matched version is available under your
+> package-manager policy.
+
 See [`docs/config.md`](./docs/config.md) for the full schema.
 
 ### 5. Manual smoke test

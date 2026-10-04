@@ -23,9 +23,13 @@ ${digest || "(no digest yet — answer conservatively, prefer mismatch)"}
 - Severity: "low" (mismatch but reversible + low blast radius), "medium" (file writes, network, install), "high" (destructive, irreversible, secret-bearing).
 
 # Output format (REQUIRED)
-Respond with a single JSON object, no prose, no fences:
+The sidecar may contain prior digest-synthesis turns. For this request, provide a validation verdict using exactly the schema below; the digest-synthesis schema is not applicable.
+
+Respond with a single JSON object, no prose, no fences, exactly this shape:
 
 {"match": <bool>, "reason": "<short rationale>", "severity": "low" | "medium" | "high"}
+
+Start your reply with {"match":
 
 JSON:`;
 }
