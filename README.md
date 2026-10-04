@@ -6,7 +6,30 @@ See [`SPEC.md`](./SPEC.md) for the full architecture and behavioral contract. Se
 
 ---
 
-## Dev install (local)
+## Install
+
+```sh
+opencode plugin add opencode-castlegate@latest
+```
+
+That is it. The plugin works **zero-config**: when no `model` block is set in `opencode.json`, it uses opencode's session-default model for the lightweight intent validator. If you want to pin a specific fast/cheap model, add a single block:
+
+```jsonc
+// opencode.json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-castlegate@latest"],
+  "opencode-castlegate": {
+    "model": { "providerID": "anthropic", "modelID": "claude-haiku-4-5" }
+  }
+}
+```
+
+See [`docs/config.md`](./docs/config.md) for the full schema.
+
+---
+
+## Local development
 
 This repo is for development against a host OpenCode installation. The plugin is loaded as a package from the host project's `.opencode/package.json`. Do not copy individual source files into `.opencode/plugins/`: the entry point imports the rest of the source tree.
 

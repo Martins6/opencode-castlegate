@@ -29,7 +29,7 @@ export const StorageConfigSchema = z.object({
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;
 
 export const CastlegateConfigSchema = z.object({
-  model: ModelConfigSchema,
+  model: ModelConfigSchema.optional(),
   intent: IntentConfigSchema.default(() => ({
     maxChars: 4000,
     compactThreshold: 0.8,
