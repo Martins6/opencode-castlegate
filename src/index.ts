@@ -7,7 +7,7 @@ import {
   validateToolCall,
   fallbackDecision,
 } from "./validate.ts";
-import { createSidecar, updateDigest } from "./intent.ts";
+import { createSidecar, disposeSidecar, updateDigest } from "./intent.ts";
 import { loadDigest, resolveStorageDir, deleteDigest } from "./store.ts";
 import { createLogger, redactedArgKeys } from "./log.ts";
 import { createIntentContextTool } from "./tools/intent-context.ts";
@@ -15,6 +15,8 @@ import { createIntentContextTool } from "./tools/intent-context.ts";
 interface SessionState {
   pendingDigestUpdate: ReturnType<typeof setTimeout> | null;
   debounceMs: number;
+  digestInFlight: boolean;
+  digestDirty: boolean;
 }
 
 const DEBOUNCE_MS = 1000;
@@ -44,7 +46,12 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
   function getSessionState(sessionID: string): SessionState {
     let state = sessionStates.get(sessionID);
     if (!state) {
-      state = { pendingDigestUpdate: null, debounceMs: DEBOUNCE_MS };
+      state = {
+        pendingDigestUpdate: null,
+        debounceMs: DEBOUNCE_MS,
+        digestInFlight: false,
+        digestDirty: false,
+      };
       sessionStates.set(sessionID, state);
     }
     return state;
@@ -52,6 +59,15 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
 
   function scheduleDigestUpdate(sessionID: string): void {
     const state = getSessionState(sessionID);
+    // If a digest update is already running, just mark the session dirty and
+    // let runDigestUpdate's finally-block schedule a follow-up once it
+    // returns. Without this, every streaming delta (message.part.updated)
+    // reschedules the debounce, spawning N concurrent sidecar prompts that
+    // pile up on a single sidecar session and none complete before disposal.
+    if (state.digestInFlight) {
+      state.digestDirty = true;
+      return;
+    }
     if (state.pendingDigestUpdate) clearTimeout(state.pendingDigestUpdate);
     state.pendingDigestUpdate = setTimeout(() => {
       state.pendingDigestUpdate = null;
@@ -60,6 +76,12 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
   }
 
   async function runDigestUpdate(sessionID: string): Promise<void> {
+    const state = getSessionState(sessionID);
+    if (state.digestInFlight) {
+      // Re-entry is fine: scheduleDigestUpdate already set the dirty flag.
+      return;
+    }
+    state.digestInFlight = true;
     try {
       const result = await updateDigest(
         { client: input.client, sessionId: sessionID, cfg },
@@ -79,6 +101,12 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
         sessionID,
         error: err instanceof Error ? err.message : String(err),
       });
+    } finally {
+      state.digestInFlight = false;
+      if (state.digestDirty) {
+        state.digestDirty = false;
+        scheduleDigestUpdate(sessionID);
+      }
     }
   }
 
@@ -98,6 +126,9 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
       }
       sessionStates.clear();
       clearValidatorCache();
+      // Best-effort delete of the validator sidecar session so it doesn't
+      // accumulate in opencode's global session DB across runs.
+      await disposeSidecar(input.client, sidecar);
     },
 
     event: async ({ event }) => {
