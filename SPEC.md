@@ -31,7 +31,7 @@ All binary decisions come from a **decision model** (LiquidAI **d1-omni-600M**, 
               │                                                       │
               │  ctx.event.subscribe                                 │
               │    └─► session.created   → seed intent file           │
-              │    └─► message.updated   → schedule intent update     │
+              │    └─► inbox/revert   → schedule intent update     │
               │         (1s debounce + in-flight coalescing)          │
               │         └─► GATE  → yes → UPDATE → save intent        │
               │                   → no  → intent untouched            │
@@ -126,8 +126,8 @@ Guard verdicts are cached in-memory keyed by `sha256("shell" + "\0" + canonicalJ
 When the guard blocks a command and the user approves it through the agent's `question` tool, the clearance is absorbed into the intent so the same command does not block again:
 
 1. **Block.** `CastlegateIntentMismatchError` (§4.3) tells the agent to ask the user. It carries `Blocked at: <ISO timestamp>` and a fresh `blockId`; the plugin keeps a pending-block record `{ blockId, sessionId, command signature }` in memory.
-2. **Ask.** The agent calls its `question` tool with **exactly two options: `Approve` and `Deny`**, the `blockId` in the prompt, and a question about the command. The plugin does not trust the agent to describe the command: a `ctx.tool.hook("execute.before", { name: "question" })` transform injects `Blocked command: \`<exact args>\`` into the prompt verbatim.
-3. **Observe.** A `ctx.tool.hook("execute.after", { name: "question" })` hook reads the answer. An answer is **consumed only when the prompt carries a `blockId` with a pending block** — unrelated questions never touch guard state. Matching is **fail-closed**: approval counts only when the answer is exactly `approve` (trimmed, case-insensitive) — the `Approve` option, or the user literally typing "approve". Anything else — including any other free text (the harness may always offer "type your own answer") — is treated as denial: no clearance, no absorption, the command stays blocked. On approval the plugin appends to the question result:
+2. **Ask.** The agent calls its `question` tool with **exactly two options: `Approve` and `Deny`**, the `blockId` in the prompt, and a question about the command. The plugin does not trust the agent to describe the command: an `execute.before` hook on `event.tool === "question"` injects `Blocked command: \`<exact args>\`` into the prompt verbatim. The question tool's input nests the prompt at `questions: [{ question, options }]`; the injection targets the `question` field carrying the `blockId` (option descriptions that merely quote it are left alone).
+3. **Observe.** An `execute.after` hook on `event.tool === "question"` reads the answer. An answer is **consumed only when the prompt carries a `blockId` with a pending block** — unrelated questions never touch guard state. The selected label is extracted from the question result (structured `answers`, or the rendered `question="label"` pair). Matching is **fail-closed**: approval counts only when a selected label is exactly `approve` (trimmed, case-insensitive); an explicit `Deny` label wins over any approval; anything else — including free text such as "I think approve" — is treated as denial: no clearance, no absorption, the command stays blocked. On approval the plugin appends to the question result:
    `CASTLEGATE_CLEARANCE: approvedAt <ISO timestamp> — the intent absorbs this clearance within <approval.absorbWaitSeconds>s.`
    so the answer time is visible to the agent and it can count elapsed time itself.
 4. **Replay allow.** The exact command signature (sha256 over canonical JSON with sorted keys) is marked cleared for `approval.replayTtlMs` (default 5 min): a retry of the identical command passes `execute.before` immediately, with no guard call.
@@ -331,17 +331,17 @@ No silent truncation: an intent that cannot fit the limit is a bug report, not s
 | V2 hook | Behavior |
 |---|---|
 | `setup(ctx)` | parse config; init-time health check of the decision server (log guidance if unreachable) |
-| `ctx.event.subscribe()` → `session.created` | initialize empty intent file (`intentVersion: 1`, body `""`) |
-| `…` → `message.updated` / `message.part.updated` / `message.part.removed` / `message.removed` | debounce 1s, coalesce in-flight updates; new user message → gate → update; edit/removal → skip gate → update with the change event (§3.2) |
-| `…` → `session.deleted` | delete intent file, cancel the session's pending debounce, tombstone the session so any in-flight update discards its write; drop per-session state |
-| `ctx.tool.hook("execute.before", { name: "shell" })` | guard (or replay allow, §3.5) |
-| `ctx.tool.hook("execute.before", { name: "question" })` | inject `Blocked command: …` + `blockId` into the question prompt (the agent is not trusted to quote it) |
-| `ctx.tool.hook("execute.after", { name: "question" })` | consume the answer only if it carries a pending `blockId`; on `approve` append `CASTLEGATE_CLEARANCE` (approvedAt), mark replay-cleared, schedule the absorb update |
+| `ctx.event.subscribe()` → `session.created` | initialize empty intent file (`intentVersion: 1`, body `""`); clear the tombstone |
+| `…` → `session.inbox.delivered` | new user message: debounce 1s, coalesce in-flight updates, gate → update (user text via `ctx.session.context`) |
+| `…` → `session.revert.committed` | history rewind (user edited/removed a message): skip gate → update with `removal` change events carrying the revoked text (§3.2) |
+| `…` → `session.deleted` | delete intent file (tombstones), cancel the session's pending debounce, drop per-session state |
+| `ctx.tool.hook("execute.before")` | `event.tool` ∈ `validate.tools` → replay check → guard → throw; `event.tool === "question"` → inject `Blocked command: …` + `blockId` |
+| `ctx.tool.hook("execute.after")` | `event.tool === "question"`: consume the answer only if it carries a pending `blockId`; on `approve` append `CASTLEGATE_CLEARANCE` (approvedAt), mark replay-cleared, schedule the absorb update |
 | cleanup fn returned by `setup` | cancel timers, clear caches |
 
 ## 7. Logging
 
-All events flow through the app log with `service: "castlegate"` (V1 `client.app.log`; V2 logging equivalent to be confirmed during the port). Tool argument values are never logged; only the keys (e.g. `["command"]`) and the decision evidence (probabilities, confidence). Event list in `docs/security-model.md`, including `gate.update`, `gate.skip`, `guard.allow`, `guard.block`, `approval.replay_allow`, `approval.absorbed`, `intent.too_long`, `api.retry`, `api.unavailable`.
+All events flow through the app log with `service: "castlegate"` (V1 `client.app.log`; V2 logging equivalent to be confirmed during the port). Tool argument values are never logged; only the keys (e.g. `["command"]`) and the decision evidence (probabilities, confidence). Event list: `gate.update`, `gate.skip`, `guard.allow`, `guard.block`, `approval.replay_allow`, `approval.absorbed`, `intent.too_long`, `api.retry`, `api.unavailable`.
 
 ## 8. Failure modes
 
@@ -394,8 +394,10 @@ The one standard term is **intent**: the aggregated intent of the user, accumula
 Purge command for the codebase — every hit must be renamed until this returns nothing:
 
 ```bash
-rg -n -i 'digest' src test docs scripts README.md package.json
+rg -n -i 'digest' src test scripts package.json | rg -v '\.digest\('
 ```
+
+Notes: node:crypto's `.digest("hex")` is an API method, not the old name (hence the filter). `README.md` is refreshed separately at release time by the maintainer and is not part of this gate.
 
 ## 10. Future work
 
