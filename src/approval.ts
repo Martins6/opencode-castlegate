@@ -136,20 +136,40 @@ export function createApprovalStore(): PendingBlockStore {
  * (unrelated questions never touch guard state).
  */
 export function transformQuestionInput(input: unknown, block: PendingBlock): unknown {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
-  const record = input as Record<string, unknown>;
   const suffix = `\n\nBlocked command: \`${blockedCommand(block)}\``;
 
-  const question = record["question"];
-  if (typeof question === "string" && question.includes(block.blockId)) {
-    return { ...record, question: question + suffix };
-  }
-  for (const [key, value] of Object.entries(record)) {
-    if (typeof value === "string" && value.includes(block.blockId)) {
-      return { ...record, [key]: value + suffix };
+  // The real question tool nests the prompt at `questions: [{ question, ... }]`
+  // and option descriptions may also quote the blockId — so prefer fields named
+  // `question` anywhere in the tree, then fall back to any string carrying it.
+  let used = false;
+  const walk = (node: unknown, onlyQuestionKeys: boolean): unknown => {
+    if (used) return node;
+    if (typeof node === "string") return node;
+    if (Array.isArray(node)) return node.map((item) => walk(item, onlyQuestionKeys));
+    if (typeof node === "object" && node !== null) {
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (
+          !used &&
+          typeof value === "string" &&
+          value.includes(block.blockId) &&
+          (!onlyQuestionKeys || key === "question")
+        ) {
+          used = true;
+          out[key] = value + suffix;
+        } else {
+          out[key] = walk(value, onlyQuestionKeys);
+        }
+      }
+      return out;
     }
-  }
-  return input;
+    return node;
+  };
+
+  const preferred = walk(input, true);
+  if (used) return preferred;
+  const fallback = walk(input, false);
+  return used ? fallback : input;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +216,45 @@ export function extractAnswerText(result: unknown): string {
   return typeof output === "string" ? output : "";
 }
 
+/**
+ * Candidate answers from a question tool result. The real result renders each
+ * answer as `question text="selected label"`; structured `answers` fields are
+ * honored first. Falls back to the whole visible text (still fail-closed: the
+ * caller matches labels exactly).
+ */
+export function extractAnswerLabels(result: unknown): string[] {
+  const labels: string[] = [];
+
+  const collect = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) collect(item);
+      return;
+    }
+    if (typeof node === "string") {
+      if (node.trim()) labels.push(node.trim());
+      return;
+    }
+    if (typeof node === "object" && node !== null) {
+      for (const value of Object.values(node as Record<string, unknown>)) collect(value);
+    }
+  };
+
+  if (result && typeof result === "object") {
+    const answers = (result as Record<string, unknown>)["answers"];
+    if (answers !== undefined) {
+      collect(answers);
+      if (labels.length > 0) return labels;
+    }
+  }
+
+  const text = extractAnswerText(result);
+  const pairs = [...text.matchAll(/="([^"]*)"/g)].map((m) => (m[1] ?? "").trim());
+  const fromPairs = pairs.filter((v) => v !== "");
+  if (fromPairs.length > 0) return fromPairs;
+
+  return text.trim() ? [text.trim()] : [];
+}
+
 // ---------------------------------------------------------------------------
 // Question-result consumption (SPEC §3.5 step 3)
 // ---------------------------------------------------------------------------
@@ -224,9 +283,13 @@ export function consumeQuestionResult(
   now: () => number = Date.now,
   absorbWaitSeconds = 60,
 ): ConsumeOutcome {
-  const answer = extractAnswerText(result);
+  const labels = extractAnswerLabels(result);
 
-  if (isApproval(answer)) {
+  // Fail-closed precedence: any explicit denial wins; approval needs an
+  // explicit "approve" label; anything else is unmatched (treated as denial).
+  if (labels.some((label) => isDenial(label))) return { decision: "deny" };
+
+  if (labels.some((label) => isApproval(label))) {
     const approvedAt = new Date(now()).toISOString();
     const clearanceLine =
       `CASTLEGATE_CLEARANCE: approvedAt ${approvedAt} — ` +
@@ -235,7 +298,6 @@ export function consumeQuestionResult(
     return { decision: "approve", approvedAt, clearanceLine };
   }
 
-  if (isDenial(answer)) return { decision: "deny" };
   return { decision: "unmatched" };
 }
 

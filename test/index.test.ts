@@ -319,12 +319,20 @@ test("approval flow: question transforms, clearance lands, replay allows", async
   });
   assert.match(blockId, /^cb_/);
 
-  // 2. The question prompt gets the exact blocked command injected.
-  const questionInput = { question: `May I run this? (${blockId})`, options: ["Approve", "Deny"] };
+  // 2. The question prompt gets the exact blocked command injected
+  //    (real v2 shape: the prompt nests under questions[].question).
+  const questionInput = {
+    questions: [
+      {
+        question: `May I run this? (${blockId})`,
+        options: [{ label: "Approve" }, { label: "Deny" }],
+      },
+    ],
+  };
   const qEvent = { tool: "question", input: questionInput, sessionID: "ses_q", messageID: "m", id: "c2" };
   await fake.runHook("execute.before", qEvent);
-  const transformed = (qEvent as { input: { question?: string } }).input;
-  assert.match(String(transformed.question ?? ""), /Blocked command: `npm run db:reset`/);
+  const transformed = (qEvent as { input: { questions: Array<{ question?: string }> } }).input;
+  assert.match(String(transformed.questions[0]?.question ?? ""), /Blocked command: `npm run db:reset`/);
 
   // 3. Approval → clearance line appended to the result.
   const questionResult = { content: [{ type: "text", text: "approve" }] };

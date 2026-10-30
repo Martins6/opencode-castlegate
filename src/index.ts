@@ -60,15 +60,26 @@ function parseModelRef(ref: string): { providerID: string; id: string } {
 }
 
 function questionText(input: unknown): string {
+  // The real question tool nests the prompt at `questions: [{ question, ... }]`;
+  // collect every string in the tree so the blockId match cannot miss it.
   if (typeof input === "string") return input;
-  if (input && typeof input === "object") {
-    const rec = input as Record<string, unknown>;
-    if (typeof rec.question === "string") return rec.question;
-    return Object.values(rec)
-      .filter((v): v is string => typeof v === "string")
-      .join("\n");
-  }
-  return "";
+  const parts: string[] = [];
+  const walk = (node: unknown, depth: number): void => {
+    if (depth > 4) return;
+    if (typeof node === "string") {
+      parts.push(node);
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
+    }
+    if (typeof node === "object" && node !== null) {
+      for (const value of Object.values(node as Record<string, unknown>)) walk(value, depth + 1);
+    }
+  };
+  walk(input, 0);
+  return parts.join("\n");
 }
 
 function asArgs(input: unknown): Record<string, unknown> {

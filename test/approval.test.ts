@@ -7,6 +7,7 @@ import {
   canonicalSignature,
   consumeQuestionResult,
   createApprovalStore,
+  extractAnswerLabels,
   extractAnswerText,
   isApproval,
   isDenial,
@@ -409,4 +410,104 @@ test("absorbClearance swallows the error even without onAbsorbError", async () =
     block,
     "2026-06-06T07:08:09.000Z",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Real V2 question shapes (captured from a live TUI session)
+// ---------------------------------------------------------------------------
+
+function realQuestionInput(blockId: string) {
+  return {
+    questions: [
+      {
+        header: "Approve Block",
+        multiple: false,
+        options: [
+          { label: "Approve", description: `Explicitly approve the block with ID ${blockId}.` },
+          { label: "Deny", description: `Deny the block ${blockId}.` },
+        ],
+        question: `Please approve or deny the block with ID ${blockId}. Select Approve or type exactly 'approve'.`,
+      },
+    ],
+  };
+}
+
+test("findForPrompt matches the nested questions[].question shape", () => {
+  const store = createApprovalStore();
+  const block = openBlock({ sessionId: "s1", tool: "shell", args: { command: "sleep 3" } });
+  store.add(block);
+  const found = store.findForPrompt("s1", JSON.stringify(realQuestionInput(block.blockId)));
+  assert.equal(found?.blockId, block.blockId);
+});
+
+test("transformQuestionInput appends into questions[].question, not option descriptions", () => {
+  const block = openBlock({ sessionId: "s1", tool: "shell", args: { command: "sleep 3" } });
+  const input = realQuestionInput(block.blockId);
+  const out = transformQuestionInput(input, block) as ReturnType<typeof realQuestionInput>;
+  const first = out.questions[0];
+  assert.ok(first);
+  assert.match(first.question, /Blocked command: `sleep 3`/);
+  assert.doesNotMatch(first.options[0]?.description ?? "", /Blocked command/);
+  assert.doesNotMatch(input.questions[0]?.question ?? "", /Blocked command/); // input untouched
+});
+
+test("consumeQuestionResult approves on the real rendered answer pair", () => {
+  const store = createApprovalStore();
+  const block = openBlock({ sessionId: "s1", tool: "shell", args: { command: "sleep 3" } });
+  store.add(block);
+  const result = {
+    content: [
+      {
+        type: "text",
+        text:
+          'User has answered your questions: "Please approve or deny the block with ID ' +
+          block.blockId +
+          '."="Approve"',
+      },
+    ],
+  };
+  const out = consumeQuestionResult(
+    store,
+    block,
+    result,
+    () => Date.parse("2026-10-30T22:30:00.000Z"),
+    60,
+  );
+  assert.equal(out.decision, "approve");
+  if (out.decision === "approve") {
+    assert.match(out.clearanceLine, /^CASTLEGATE_CLEARANCE: approvedAt 2026-10-30T22:30:00\.000Z/);
+    assert.equal(store.get(block.blockId), undefined); // consumed
+  }
+});
+
+test("consumeQuestionResult: denial beats approval on mixed labels", () => {
+  const store = createApprovalStore();
+  const block = openBlock({ sessionId: "s1", tool: "shell", args: { command: "sleep 3" } });
+  store.add(block);
+  const result = {
+    content: [
+      { type: "text", text: 'answered: "one"="Approve" "two"="Deny"' },
+    ],
+  };
+  assert.equal(consumeQuestionResult(store, block, result).decision, "deny");
+});
+
+test("consumeQuestionResult stays fail-closed on free text without a selected label", () => {
+  const store = createApprovalStore();
+  const block = openBlock({ sessionId: "s1", tool: "shell", args: { command: "sleep 3" } });
+  store.add(block);
+  const result = { content: [{ type: "text", text: "I think approve is fine here" }] };
+  assert.equal(consumeQuestionResult(store, block, result).decision, "unmatched");
+});
+
+test("extractAnswerLabels prefers structured answers, then rendered pairs, then whole text", () => {
+  assert.deepEqual(extractAnswerLabels({ answers: ["Approve"] }), ["Approve"]);
+  assert.deepEqual(
+    extractAnswerLabels({ content: [{ type: "text", text: 'q"="Approve"' }] }),
+    ["Approve"],
+  );
+  assert.deepEqual(extractAnswerLabels({ content: [{ type: "text", text: "approve" }] }), [
+    "approve",
+  ]);
+  assert.deepEqual(extractAnswerLabels({}), []);
 });
