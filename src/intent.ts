@@ -187,7 +187,7 @@ export async function updateDigest(
   }
 
   const compact = existing
-    ? needsCompact(existing.body, cfg.intent.maxChars, cfg.intent.compactThreshold)
+    ? needsCompact(existing.body, cfg.intent.maxChars, 0.8) // legacy v1 threshold; this module is replaced in Step 5
     : false;
 
   const prompt = buildIntentUpdatePrompt({

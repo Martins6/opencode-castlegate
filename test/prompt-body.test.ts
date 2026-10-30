@@ -5,7 +5,7 @@ import { parseConfig } from "../src/config.ts";
 
 test("buildSidecarPromptBody includes model when configured", () => {
   const cfg = parseConfig({
-    model: { providerID: "anthropic", modelID: "claude-haiku-4-5" },
+    update: { model: "anthropic/claude-haiku-4-5" },
   });
   const body = buildSidecarPromptBody(cfg, "hello");
   assert.deepEqual(body.model, { providerID: "anthropic", modelID: "claude-haiku-4-5" });

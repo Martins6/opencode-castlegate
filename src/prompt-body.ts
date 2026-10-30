@@ -17,10 +17,11 @@ export function buildSidecarPromptBody(
     system: SYSTEM_PROMPT,
     parts: [{ type: "text", text: prompt }],
   };
-  if (cfg.model) {
+  if (cfg.update.model) {
+    const sep = cfg.update.model.indexOf("/");
     body.model = {
-      providerID: cfg.model.providerID,
-      modelID: cfg.model.modelID,
+      providerID: cfg.update.model.slice(0, sep),
+      modelID: cfg.update.model.slice(sep + 1),
     };
   }
   return body;

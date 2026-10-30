@@ -140,7 +140,7 @@ export async function validateToolCall(args: ValidateToolCallArgs): Promise<Vali
 }
 
 export function fallbackDecision(tool: string, cfg: CastlegateConfig): IntentValidateResult {
-  if (cfg.validate.failOpenOnError) {
+  if (cfg.validate.onApiUnavailable === "allow") {
     return { match: true, reason: "validator unavailable (fail-open)", severity: "low" };
   }
   return {

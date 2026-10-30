@@ -93,15 +93,3 @@ export function enforceMaxChars(digest: string, maxChars: number): string {
   if (maxChars <= 0 || digest.length <= maxChars) return digest;
   return digest.slice(0, maxChars);
 }
-
-export function configForPrompt(cfg: CastlegateConfig): {
-  maxChars: number;
-  compactThreshold: number;
-  maxRecentMessages: number;
-} {
-  return {
-    maxChars: cfg.intent.maxChars,
-    compactThreshold: cfg.intent.compactThreshold,
-    maxRecentMessages: cfg.intent.maxRecentMessages,
-  };
-}

@@ -195,7 +195,7 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
           tool,
           error: err instanceof Error ? err.message : String(err),
         });
-        if (!cfg.validate.failOpenOnError) {
+        if (cfg.validate.onApiUnavailable === "block") {
           throw new CastlegateIntentMismatchError(
             tool,
             "castlegate: digest store unavailable",
