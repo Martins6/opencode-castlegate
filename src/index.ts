@@ -8,7 +8,7 @@ import {
   fallbackDecision,
 } from "./validate.ts";
 import { createSidecar, disposeSidecar, updateDigest } from "./intent.ts";
-import { loadDigest, resolveStorageDir, deleteDigest } from "./store.ts";
+import { loadIntent, resolveStorageDir, deleteIntent, reviveIntent } from "./store.ts";
 import { createLogger, redactedArgKeys } from "./log.ts";
 import { createIntentContextTool } from "./tools/intent-context.ts";
 
@@ -112,10 +112,11 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
 
   async function ensureInitialized(sessionID: string): Promise<void> {
     const dir = resolveStorageDir(input.directory, cfg.storage.directory);
-    const existing = await loadDigest(dir, sessionID);
+    reviveIntent(dir, sessionID);
+    const existing = await loadIntent(dir, sessionID);
     if (!existing) {
-      const { saveDigest } = await import("./store.ts");
-      await saveDigest(dir, sessionID, "", { baseVersion: 0, lastMessageId: null });
+      const { saveIntent } = await import("./store.ts");
+      await saveIntent(dir, sessionID, "", { expectedVersion: 0, lastMessageId: null });
     }
   }
 
@@ -152,7 +153,7 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
           if (!sessionID) return;
           try {
             const dir = resolveStorageDir(input.directory, cfg.storage.directory);
-            await deleteDigest(dir, sessionID);
+            await deleteIntent(dir, sessionID);
             sessionStates.delete(sessionID);
             await log.event("session.deleted", { sessionID });
           } catch (err) {
@@ -188,7 +189,7 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
       const dir = resolveStorageDir(input.directory, cfg.storage.directory);
       let file;
       try {
-        file = await loadDigest(dir, sessionID);
+        file = await loadIntent(dir, sessionID);
       } catch (err) {
         await log.event("validate.digest_load_error", {
           sessionID,
@@ -206,7 +207,7 @@ export const CastlegatePlugin: Plugin = async (input, options) => {
       }
 
       const digest = file?.body ?? "";
-      const digestVersion = file?.header.digestVersion ?? 0;
+      const digestVersion = file?.header.intentVersion ?? 0;
 
       if (!digest) {
         await log.event("validate.skip_no_digest", { sessionID, tool });

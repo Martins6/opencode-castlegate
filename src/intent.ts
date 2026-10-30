@@ -1,5 +1,5 @@
 import type { CastlegateConfig } from "./config.ts";
-import { loadDigest, saveDigest, needsCompact, resolveStorageDir } from "./store.ts";
+import { loadIntent, saveIntent, needsCompact, resolveStorageDir } from "./store.ts";
 import {
   buildIntentUpdatePrompt,
   parseIntentUpdateResponse,
@@ -155,7 +155,7 @@ export async function updateDigest(
 ): Promise<UpdateDigestResult> {
   const { client, sessionId, cfg, sinceMessageId, newMessages } = args;
   const dir = resolveStorageDir(process.cwd(), cfg.storage.directory);
-  const existing = await loadDigest(dir, sessionId);
+  const existing = await loadIntent(dir, sessionId);
 
   const freshMessages =
     newMessages ??
@@ -169,7 +169,7 @@ export async function updateDigest(
   if (freshMessages.length === 0 && existing) {
     return {
       digest: existing.body,
-      version: existing.header.digestVersion,
+      version: existing.header.intentVersion,
       compacted: false,
       intentShift: "",
       skipped: true,
@@ -210,16 +210,26 @@ export async function updateDigest(
     | { id: string; role: string; author?: string; text: string }
     | undefined;
   const lastId = lastFresh?.id ?? existing?.header.lastMessageId ?? null;
-  const baseVersion = existing?.header.digestVersion ?? 0;
+  const baseVersion = existing?.header.intentVersion ?? 0;
 
-  const header = await saveDigest(dir, sessionId, safeDigest, {
-    baseVersion,
+  const saved = await saveIntent(dir, sessionId, safeDigest, {
+    expectedVersion: baseVersion,
     lastMessageId: lastId,
   });
 
+  if (!saved.saved) {
+    return {
+      digest: safeDigest,
+      version: baseVersion,
+      compacted: compact,
+      intentShift: parsed.intentShift,
+      skipped: true,
+    };
+  }
+
   return {
     digest: safeDigest,
-    version: header.digestVersion,
+    version: saved.header.intentVersion,
     compacted: compact,
     intentShift: parsed.intentShift,
     skipped: false,

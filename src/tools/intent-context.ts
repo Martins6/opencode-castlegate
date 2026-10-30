@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { tool } from "@opencode-ai/plugin";
-import { loadDigest, resolveStorageDir } from "../store.ts";
+import { loadIntent, resolveStorageDir } from "../store.ts";
 import type { CastlegateConfig } from "../config.ts";
 
 export function createIntentContextTool(getCfg: () => CastlegateConfig) {
@@ -13,7 +13,7 @@ export function createIntentContextTool(getCfg: () => CastlegateConfig) {
     async execute(args, context) {
       const cfg = getCfg();
       const dir = resolveStorageDir(context.directory, cfg.storage.directory);
-      const file = await loadDigest(dir, context.sessionID);
+      const file = await loadIntent(dir, context.sessionID);
 
       if (!file) {
         const out = "(no intent digest yet for this session)";
@@ -25,7 +25,7 @@ export function createIntentContextTool(getCfg: () => CastlegateConfig) {
           title: "castlegate intent_context",
           output: `# castlegate intent digest\n\n${file.body}`,
           metadata: {
-            version: file.header.digestVersion,
+            version: file.header.intentVersion,
             lastMessageId: file.header.lastMessageId,
             updatedAt: file.header.updatedAt,
             charCount: file.header.charCount,
@@ -36,7 +36,7 @@ export function createIntentContextTool(getCfg: () => CastlegateConfig) {
       const out = [
         `# castlegate intent digest`,
         ``,
-        `Version: ${file.header.digestVersion}`,
+        `Version: ${file.header.intentVersion}`,
         `Updated: ${file.header.updatedAt}`,
         `Chars:   ${file.header.charCount}`,
         `LastMsg: ${file.header.lastMessageId ?? "(none)"}`,
@@ -48,7 +48,7 @@ export function createIntentContextTool(getCfg: () => CastlegateConfig) {
         title: "castlegate intent_context",
         output: out,
         metadata: {
-          version: file.header.digestVersion,
+          version: file.header.intentVersion,
           lastMessageId: file.header.lastMessageId,
           updatedAt: file.header.updatedAt,
           charCount: file.header.charCount,
