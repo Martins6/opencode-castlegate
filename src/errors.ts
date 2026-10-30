@@ -2,11 +2,6 @@
 // message format so the agent can parse them; isCastlegateError() is duck-typed
 // on the tag so it works across realms and duplicated module copies (§5.7).
 
-import { randomBytes } from "node:crypto";
-
-/** @deprecated v1 alias kept while src/index.ts (v1 shim) still imports it. */
-export const CASTLEGATE_TAG = "CASTLEGATE_INTENT_MISMATCH";
-
 export type CastlegateErrorTag =
   | "CASTLEGATE_INTENT_MISMATCH"
   | "CASTLEGATE_API_UNAVAILABLE"
@@ -57,29 +52,7 @@ export class CastlegateIntentMismatchError extends Error {
   readonly blockId: string;
   readonly absorbWaitSeconds: number;
 
-  /**
-   * @deprecated v1 positional form `(tool, reason, severity)` — kept only while
-   * src/index.ts (v1 shim) constructs errors positionally. New code must pass
-   * the options object (SPEC §4.3); the v1 form synthesizes blockId/blockedAt.
-   */
-  constructor(tool: string, reason: string, severity: MismatchSeverity);
-  constructor(opts: CastlegateIntentMismatchOptions);
-  constructor(
-    optsOrTool: CastlegateIntentMismatchOptions | string,
-    reason?: string,
-    severity?: MismatchSeverity,
-  ) {
-    const opts: CastlegateIntentMismatchOptions =
-      typeof optsOrTool === "string"
-        ? {
-            tool: optsOrTool,
-            reason: reason ?? "",
-            severity: severity ?? "medium",
-            blockedAt: new Date().toISOString(),
-            blockId: `cb_${randomBytes(4).toString("hex")}`,
-            absorbWaitSeconds: 60,
-          }
-        : optsOrTool;
+  constructor(opts: CastlegateIntentMismatchOptions) {
     const message =
       `CASTLEGATE_INTENT_MISMATCH: tool '${opts.tool}' did not match the current session intent.\n` +
       `Reason: ${opts.reason}\n` +

@@ -1,62 +1,42 @@
-import type { PluginInput } from "@opencode-ai/plugin";
+/**
+ * Structured logging (SPEC §7).
+ *
+ * V2 has no `app.log` write API (ctx.app is name/version/channel only), so
+ * events go to the host log as one JSON line per event on stdout/stderr with
+ * the `service: "castlegate"` tag. Tool argument VALUES are never logged —
+ * only their keys (redactedArgKeys).
+ */
+
 import type { CastlegateConfig } from "./config.ts";
 
-type LogLevel = "debug" | "info" | "warn" | "error";
-
 export interface Logger {
-  event(name: string, fields: Record<string, unknown>): Promise<void>;
-  warn(name: string, fields: Record<string, unknown>): Promise<void>;
-  error(name: string, fields: Record<string, unknown>): Promise<void>;
-}
-
-export function createLogger(client: PluginInput["client"], cfg: CastlegateConfig): Logger {
-  const send = async (level: LogLevel, name: string, fields: Record<string, unknown>) => {
-    if (!cfg.logging && level !== "error") return;
-    try {
-      await client.app.log({
-        body: {
-          service: "castlegate",
-          level,
-          message: name,
-          extra: fields,
-        },
-      });
-    } catch {
-      // never let logging break the plugin
-    }
-  };
-
-  return {
-    async event(name, fields) {
-      await send("info", name, fields);
-    },
-    async warn(name, fields) {
-      await send("warn", name, fields);
-    },
-    async error(name, fields) {
-      await send("error", name, fields);
-    },
-  };
+  event(name: string, fields?: Record<string, unknown>): Promise<void>;
+  warn(name: string, fields?: Record<string, unknown>): Promise<void>;
+  error(name: string, fields?: Record<string, unknown>): Promise<void>;
 }
 
 export function redactedArgKeys(args: unknown): string[] {
-  if (!args || typeof args !== "object") return [];
-  try {
-    return Object.keys(args as Record<string, unknown>);
-  } catch {
-    return [];
-  }
+  if (args === null || typeof args !== "object") return [];
+  return Object.keys(args as Record<string, unknown>);
 }
 
-export function previewArgValue(value: unknown, maxLen = 80): string {
-  if (value == null) return String(value);
-  if (typeof value === "string") {
-    return value.length <= maxLen ? value : value.slice(0, maxLen) + "...";
-  }
-  try {
-    const s = JSON.stringify(value);
-    return s.length <= maxLen ? s : s.slice(0, maxLen) + "...";
-  } catch {
-    return "(unserializable)";
-  }
+function emit(level: "info" | "warn" | "error", name: string, fields: Record<string, unknown>): void {
+  const line = JSON.stringify({ service: "castlegate", level, event: name, ...fields });
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+
+export function createLogger(cfg: CastlegateConfig): Logger {
+  return {
+    async event(name, fields = {}) {
+      if (cfg.logging) emit("info", name, fields);
+    },
+    async warn(name, fields = {}) {
+      if (cfg.logging) emit("warn", name, fields);
+    },
+    async error(name, fields = {}) {
+      emit("error", name, fields); // errors are always logged
+    },
+  };
 }

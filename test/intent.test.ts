@@ -150,17 +150,6 @@ test("extractIntentBody handles an inner code block inside the document", () => 
   assert.equal(extractIntentBody(raw), "# Intent\n\n```bash\necho hi\n```\n\n- a");
 });
 
-test("legacy v1 call shape still resolves (compat shim)", () => {
-  const prompt = buildIntentUpdatePrompt({
-    previousDigest: "old summary",
-    maxChars: 2000,
-    newMessages: [{ role: "user", text: "also clean tests" }],
-    compact: true,
-  });
-  assert.match(prompt, /ANCHOR INTENT/);
-  assert.match(prompt, /REPLACE/);
-});
-
 const change: IntentChange = { type: "messages", messages: [] };
 test("IntentChange union is exported and usable", () => {
   assert.equal(change.type, "messages");
