@@ -341,7 +341,7 @@ No silent truncation: an intent that cannot fit the limit is a bug report, not s
 
 ## 7. Logging
 
-All events flow through the app log with `service: "castlegate"` (V1 `client.app.log`; V2 logging equivalent to be confirmed during the port). Tool argument values are never logged; only the keys (e.g. `["command"]`) and the decision evidence (probabilities, confidence). Event list in `docs/security-model.md`, including `gate.update`, `gate.skip`, `guard.allow`, `guard.block`, `approval.replay_allow`, `approval.absorbed`, `intent.too_long`, `api.retry`, `api.unavailable`.
+All events flow through the app log with `service: "castlegate"` (V1 `client.app.log`; V2 logging equivalent to be confirmed during the port). Tool argument values are never logged; only the keys (e.g. `["command"]`) and the decision evidence (probabilities, confidence). Event list: `gate.update`, `gate.skip`, `guard.allow`, `guard.block`, `approval.replay_allow`, `approval.absorbed`, `intent.too_long`, `api.retry`, `api.unavailable`.
 
 ## 8. Failure modes
 

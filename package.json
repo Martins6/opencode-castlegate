@@ -1,6 +1,6 @@
 {
   "name": "opencode-castlegate",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "OpenCode plugin that auto-approves tool calls when they match the user's session intent, validated by a lightweight model.",
   "type": "module",
   "main": "./src/index.ts",
@@ -32,11 +32,11 @@
     "src",
     "README.md",
     "SPEC.md",
-    "docs",
     "LICENSE"
   ],
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.0",
+    "@opencode/plugin": "2.1.4",
     "zod": "4.1.8"
   },
   "devDependencies": {
