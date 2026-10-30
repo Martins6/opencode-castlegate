@@ -21,10 +21,9 @@ export function redactedArgKeys(args: unknown): string[] {
 }
 
 function emit(level: "info" | "warn" | "error", name: string, fields: Record<string, unknown>): void {
-  const line = JSON.stringify({ service: "castlegate", level, event: name, ...fields });
-  if (level === "error") console.error(line);
-  else if (level === "warn") console.warn(line);
-  else console.log(line);
+  // stderr only: plugin stdout is not captured by the opencode log in every
+  // mode, stderr is. The level travels in the JSON payload.
+  console.error(JSON.stringify({ service: "castlegate", level, event: name, ...fields }));
 }
 
 export function createLogger(cfg: CastlegateConfig): Logger {

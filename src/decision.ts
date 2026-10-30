@@ -560,15 +560,28 @@ export async function askDecision(args: AskDecisionArgs): Promise<DecisionAnswer
 }
 
 /**
- * Init-time probe (SPEC §6): a HEAD request; any non-2xx response or network
- * failure means unhealthy. Does not retry and never touches breaker state.
+ * Init-time probe (SPEC §6): a minimal POST to the System One endpoint —
+ * it is POST-only (HEAD 404s on real servers). No retries and never touches
+ * breaker state. Any HTTP response below 500 proves the server is reachable.
  */
 export async function healthCheck(cfg: CastlegateConfig, signal?: AbortSignal): Promise<boolean> {
   const timeoutSignal = AbortSignal.timeout(cfg.decision.timeoutMs);
   const combined = signal ? combineSignals([timeoutSignal, signal]) : timeoutSignal;
   try {
-    const res = await fetch(cfg.decision.baseURL, { method: "HEAD", signal: combined });
-    return res.status >= 200 && res.status < 300;
+    const res = await fetch(cfg.decision.baseURL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        model: cfg.decision.model,
+        state: "health probe",
+        questions: { probe: { type: "noul", instructions: "Is this a probe?" } },
+      }),
+      signal: combined,
+    });
+    return res.status < 500;
   } catch {
     return false;
   }

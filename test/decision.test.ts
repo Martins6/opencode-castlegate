@@ -169,7 +169,7 @@ test("multiple questions travel in ONE request (single fetch call)", async (t) =
   assert.equal(Object.keys(answers).length, 5);
 });
 
-test("healthCheck reports healthy on 2xx and unhealthy otherwise", async (t) => {
+test("healthCheck probes with a minimal POST and treats 4xx as reachable", async (t) => {
   let status = 200;
   let method = "";
   const { restore } = mockFetch((_i, _url, init) => {
@@ -181,7 +181,9 @@ test("healthCheck reports healthy on 2xx and unhealthy otherwise", async (t) => 
 
   const cfg = gateConfig();
   assert.equal(await healthCheck(cfg), true);
-  assert.equal(method, "HEAD");
+  assert.equal(method, "POST");
+  status = 400; // reachable but rejecting the probe — still healthy
+  assert.equal(await healthCheck(cfg), true);
   status = 503;
   assert.equal(await healthCheck(cfg), false);
 });
