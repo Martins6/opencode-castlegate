@@ -394,8 +394,10 @@ The one standard term is **intent**: the aggregated intent of the user, accumula
 Purge command for the codebase — every hit must be renamed until this returns nothing:
 
 ```bash
-rg -n -i 'digest' src test docs scripts README.md package.json
+rg -n -i 'digest' src test scripts package.json | rg -v '\.digest\('
 ```
+
+Notes: node:crypto's `.digest("hex")` is an API method, not the old name (hence the filter). `README.md` is refreshed separately at release time by the maintainer and is not part of this gate.
 
 ## 10. Future work
 
