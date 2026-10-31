@@ -114,6 +114,7 @@ async function main(): Promise<void> {
   const runHook = async (name: string, event: unknown) => {
     for (const cb of hooks.get(name) ?? []) await cb(event);
   };
+  let capturedBlockId = "";
 
   const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(ctx);
   console.log("[e2e] plugin setup ok; tools:", tools.map((t) => t.name).join(", "));
@@ -137,6 +138,35 @@ async function main(): Promise<void> {
     console.log("[e2e] FAIL: out-of-scope command was allowed");
   } catch (err) {
     console.log("[e2e] guard blocked as expected:", isCastlegateError(err), "-", String(err).split("\n")[0]);
+    capturedBlockId = (/Block id: (\S+)/.exec(String(err)) ?? [])[1] ?? "";
+  }
+
+  // Headless degradation: a failed question marks the session and steers.
+  if (capturedBlockId) {
+    const qEvent = {
+      tool: "question",
+      input: { questions: [{ question: `Approve? (${capturedBlockId})` }] },
+      sessionID: "ses_e2e",
+      messageID: "m1",
+      id: "q1",
+      status: "error",
+      error: { message: "form cancelled" },
+    };
+    await runHook("execute.after", qEvent);
+    const rewritten = String((qEvent as { error: { message: string } }).error.message);
+    console.log("[e2e] question error rewritten:", rewritten.split("\n")[0]);
+    try {
+      await runHook("execute.before", {
+        tool: "shell",
+        input: { command: "rm -rf build" },
+        sessionID: "ses_e2e",
+        messageID: "m1",
+        id: "c2",
+      });
+      console.log("[e2e] FAIL: headless session allowed a command");
+    } catch (err) {
+      console.log("[e2e] headless steering error:", String(err).split("\n")[0]);
+    }
   }
 
   decisionMode = "down";
