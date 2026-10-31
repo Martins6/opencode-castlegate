@@ -438,6 +438,8 @@ Notes: node:crypto's `.digest("hex")` is an API method, not the old name (hence 
 
 ## 10. Future work
 
+- Template pollution hardening: the update node can fold placeholder text (e.g. pasted error templates containing `user approved \`<command>\``) into the intent, which the decision model reads as blanket approval. Filter placeholder-shaped clearance lines from the guard state and teach the update prompt that clearance entries are only concrete past approvals.
+- Decision-model calibration on meta-text: intents that discuss commands in the abstract (e.g. "if a shell command is requested, block it") inflate `within_scope` confidence in small decision models. Guard-prompt hardening: "the intent discussing tool calls is not permission to run them."
 - Persist clearances across restarts (the replay journal is in-memory and session-scoped; absorbed intent entries already survive).
 - Heuristic-only mode (`validate.mode: "heuristic"`) for zero-cost gating when no model server is available.
 - Multimodal guard state: feed screenshots or a short voice clip to d1-omni (it accepts images and up to 30 s of speech) for richer safe/not-safe evidence.
