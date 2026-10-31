@@ -23,6 +23,7 @@ import {
   CastlegateIntentMismatchError,
   CastlegateApiUnavailableError,
   CastlegateIntentTooLongError,
+  CastlegateHeadlessBlockedError,
   isCastlegateError,
 } from "./errors.ts";
 import {
@@ -395,10 +396,30 @@ export default Plugin.define({
           return;
         }
 
+        const headless = cfg.approval.mode === "headless" || store.isHeadless(event.sessionID);
+        if (headless) {
+          // No approval path exists (SPEC §3.6): steer the agent elsewhere.
+          await log.event("guard.block", {
+            sessionID: event.sessionID,
+            tool: event.tool,
+            reason: verdict.reason,
+            severity: verdict.severity,
+            headless: true,
+          });
+          throw new CastlegateHeadlessBlockedError({
+            tool: event.tool,
+            reason: verdict.reason,
+            severity: verdict.severity,
+            blockedAt: new Date().toISOString(),
+          });
+        }
+
         const block = openBlock({
           sessionId: event.sessionID,
           tool: event.tool,
           args,
+          reason: verdict.reason,
+          severity: verdict.severity,
         });
         store.add(block);
         await log.event("guard.block", {
@@ -407,6 +428,7 @@ export default Plugin.define({
           blockId: block.blockId,
           reason: verdict.reason,
           severity: verdict.severity,
+          headless: false,
         });
         throw new CastlegateIntentMismatchError({
           tool: event.tool,
@@ -465,10 +487,30 @@ export default Plugin.define({
       const block = store.findForPrompt(event.sessionID, questionText(event.input));
       if (!block) return; // unrelated question — never touches guard state (§5.7)
 
+      // Headless detection (SPEC §3.6): a block-related question that cannot
+      // complete means nobody can answer. Rewrite the failure into the
+      // steering message and mark the session headless for good.
+      if (event.status === "error") {
+        store.markHeadless(event.sessionID);
+        store.delete(block.blockId);
+        const steering = new CastlegateHeadlessBlockedError({
+          tool: block.tool,
+          reason: block.reason ?? "decision evidence unavailable",
+          severity: block.severity ?? "medium",
+          blockedAt: new Date().toISOString(),
+        });
+        (event as unknown as { error: { message: string } }).error.message = steering.message;
+        await log.event("question.headless_detected", {
+          sessionID: event.sessionID,
+          blockId: block.blockId,
+        });
+        return;
+      }
+
       const outcome = consumeQuestionResult(
         store,
         block,
-        event.status === "completed" ? event.result : event.error,
+        event.result,
         Date.now,
         cfg.approval.absorbWaitSeconds,
       );

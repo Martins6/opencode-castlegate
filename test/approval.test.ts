@@ -511,3 +511,25 @@ test("extractAnswerLabels prefers structured answers, then rendered pairs, then 
   ]);
   assert.deepEqual(extractAnswerLabels({}), []);
 });
+
+test("headless marks are per-session and cleared with the store", () => {
+  const store = createApprovalStore();
+  assert.equal(store.isHeadless("s1"), false);
+  store.markHeadless("s1");
+  assert.equal(store.isHeadless("s1"), true);
+  assert.equal(store.isHeadless("s2"), false);
+  store.clear();
+  assert.equal(store.isHeadless("s1"), false);
+});
+
+test("openBlock carries the decision evidence for the steering error", () => {
+  const block = openBlock({
+    sessionId: "s1",
+    tool: "shell",
+    args: { command: "sleep 3" },
+    reason: "decision: out_of_scope p=0.91",
+    severity: "high",
+  });
+  assert.equal(block.reason, "decision: out_of_scope p=0.91");
+  assert.equal(block.severity, "high");
+});
