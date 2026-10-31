@@ -19,6 +19,9 @@ export const UpdateConfigSchema = z.object({
 export type UpdateConfig = z.infer<typeof UpdateConfigSchema>;
 
 export const ApprovalConfigSchema = z.object({
+  // "auto" = question flow, degrades to steering when headless (SPEC §3.6)
+  // | "headless" = steering error from block #1
+  mode: z.enum(["auto", "headless"]).default("auto"),
   absorbWaitSeconds: z.number().int().positive().default(60),
   replayTtlMs: z.number().int().positive().default(300_000),
 });
@@ -60,6 +63,7 @@ export const CastlegateConfigSchema = z.object({
     timeoutMs: 60_000,
   })),
   approval: ApprovalConfigSchema.default(() => ({
+    mode: "auto" as const,
     absorbWaitSeconds: 60,
     replayTtlMs: 300_000,
   })),

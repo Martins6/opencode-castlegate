@@ -5,12 +5,14 @@
 export type CastlegateErrorTag =
   | "CASTLEGATE_INTENT_MISMATCH"
   | "CASTLEGATE_API_UNAVAILABLE"
-  | "CASTLEGATE_INTENT_TOO_LONG";
+  | "CASTLEGATE_INTENT_TOO_LONG"
+  | "CASTLEGATE_HEADLESS_BLOCK";
 
 const CASTLEGATE_TAGS: ReadonlySet<string> = new Set<CastlegateErrorTag>([
   "CASTLEGATE_INTENT_MISMATCH",
   "CASTLEGATE_API_UNAVAILABLE",
   "CASTLEGATE_INTENT_TOO_LONG",
+  "CASTLEGATE_HEADLESS_BLOCK",
 ]);
 
 /** Structural view of any castlegate-tagged error (works across realms). */
@@ -127,5 +129,40 @@ export class CastlegateIntentTooLongError extends Error {
     this.name = "CastlegateIntentTooLongError";
     this.maxChars = opts.maxChars;
     this.shrinkAttempts = opts.shrinkAttempts;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CASTLEGATE_HEADLESS_BLOCK (SPEC §3.6, §4.3)
+// ---------------------------------------------------------------------------
+
+export interface CastlegateHeadlessBlockedOptions {
+  tool: string;
+  reason: string;
+  severity: MismatchSeverity;
+  blockedAt: string; // ISO timestamp
+}
+
+export class CastlegateHeadlessBlockedError extends Error {
+  readonly tag = "CASTLEGATE_HEADLESS_BLOCK";
+  readonly tool: string;
+  readonly reason: string;
+  readonly severity: MismatchSeverity;
+  readonly blockedAt: string;
+
+  constructor(opts: CastlegateHeadlessBlockedOptions) {
+    const message =
+      `CASTLEGATE_HEADLESS_BLOCK: tool '${opts.tool}' is blocked and cannot be approved here.\n` +
+      `Reason: ${opts.reason}\n` +
+      `Severity: ${opts.severity}\n` +
+      `Blocked at: ${opts.blockedAt}\n` +
+      `This session is headless: the user cannot approve or reject your action right now.\n` +
+      `Action required: do NOT try to approve this. Use a different shell command that fits the user's stated intent. If this exact command is truly necessary, tell the user to run it from an interactive session.`;
+    super(message);
+    this.name = "CastlegateHeadlessBlockedError";
+    this.tool = opts.tool;
+    this.reason = opts.reason;
+    this.severity = opts.severity;
+    this.blockedAt = opts.blockedAt;
   }
 }

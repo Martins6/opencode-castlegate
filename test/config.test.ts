@@ -13,6 +13,7 @@ test("parseConfig accepts empty config and fills spec defaults", () => {
   assert.equal(cfg.decision.safeConfidence, 0.85);
   assert.equal(cfg.update.model, null);
   assert.equal(cfg.update.timeoutMs, 60_000);
+  assert.equal(cfg.approval.mode, "auto");
   assert.equal(cfg.approval.absorbWaitSeconds, 60);
   assert.equal(cfg.approval.replayTtlMs, 300_000);
   assert.equal(cfg.intent.maxChars, 10_000);
@@ -40,7 +41,7 @@ test("parseConfig respects user overrides", () => {
       safeConfidence: 0.9,
     },
     update: { model: "anthropic/claude-haiku-4-5", timeoutMs: 30_000 },
-    approval: { absorbWaitSeconds: 30, replayTtlMs: 60_000 },
+    approval: { mode: "headless", absorbWaitSeconds: 30, replayTtlMs: 60_000 },
     intent: { maxChars: 2000, shrinkAttempts: 5, maxRecentMessages: 10 },
     validate: {
       tools: ["shell", "edit"],
@@ -57,6 +58,7 @@ test("parseConfig respects user overrides", () => {
   assert.equal(cfg.decision.baseURL, "http://10.0.0.5:9999/v1/systemone");
   assert.equal(cfg.decision.gateThreshold, 0.7);
   assert.equal(cfg.update.model, "anthropic/claude-haiku-4-5");
+  assert.equal(cfg.approval.mode, "headless");
   assert.equal(cfg.approval.absorbWaitSeconds, 30);
   assert.equal(cfg.intent.maxChars, 2000);
   assert.deepEqual(cfg.validate.tools, ["shell", "edit"]);
@@ -78,6 +80,7 @@ test("safeParseConfig returns ok:false with zod error on bad input", () => {
   const r = safeParseConfig({
     decision: { stateMaxChars: -1 },
     validate: { onApiUnavailable: "maybe" },
+    approval: { mode: "sometimes" },
   });
   assert.equal(r.ok, false);
   if (!r.ok) {

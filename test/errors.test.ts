@@ -4,6 +4,7 @@ import {
   CastlegateIntentMismatchError,
   CastlegateApiUnavailableError,
   CastlegateIntentTooLongError,
+  CastlegateHeadlessBlockedError,
   isCastlegateError,
 } from "../src/errors.ts";
 
@@ -139,4 +140,30 @@ test("isCastlegateError rejects unrelated values (fail-closed)", () => {
   assert.equal(isCastlegateError(null), false);
   assert.equal(isCastlegateError(undefined), false);
   assert.equal(isCastlegateError(42), false);
+});
+
+test("CastlegateHeadlessBlockedError message matches the SPEC §4.3 template exactly", () => {
+  const err = new CastlegateHeadlessBlockedError({
+    tool: "shell",
+    reason: "decision: out_of_scope p=0.91, confidence 0.88, severity 2/2 (destructive)",
+    severity: "high",
+    blockedAt: "2026-10-31T10:00:00.000Z",
+  });
+  assert.equal(
+    err.message,
+    [
+      "CASTLEGATE_HEADLESS_BLOCK: tool 'shell' is blocked and cannot be approved here.",
+      "Reason: decision: out_of_scope p=0.91, confidence 0.88, severity 2/2 (destructive)",
+      "Severity: high",
+      "Blocked at: 2026-10-31T10:00:00.000Z",
+      "This session is headless: the user cannot approve or reject your action right now.",
+      "Action required: do NOT try to approve this. Use a different shell command that fits the user's stated intent. If this exact command is truly necessary, tell the user to run it from an interactive session.",
+    ].join("\n"),
+  );
+  assert.equal(err.tag, "CASTLEGATE_HEADLESS_BLOCK");
+  assert.equal(err.name, "CastlegateHeadlessBlockedError");
+  assert.equal(err.tool, "shell");
+  assert.equal(err.severity, "high");
+  assert.equal(err.blockedAt, "2026-10-31T10:00:00.000Z");
+  assert.equal(isCastlegateError(err), true);
 });
