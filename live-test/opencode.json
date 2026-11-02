@@ -1,13 +1,21 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // castlegate live-test sandbox. The plugin loads from the repo root ("..").
+  // castlegate live-test sandbox. The plugin loads from the repo root ("./..").
+  //
+  // Everything runs off the always-on llama.app server at :9092: it serves
+  // multiple installed models and routes by the `model` field — chat models
+  // for the agent, the d1 decision model for castlegate's gate/guard.
   "model": "llamacpp/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M",
   "plugins": [
     {
       "package": "./..",
       "options": {
         "decision": {
-          "baseURL": "http://127.0.0.1:8081/v1/systemone"
+          // Any /v1/systemone-capable endpoint works (SPEC 3.1). llama.app
+          // serves d1 alongside the chat models on one port; for a standalone
+          // llama-server use scripts/start-decision-server.sh (:8081).
+          "baseURL": "http://127.0.0.1:9092/v1/systemone",
+          "model": "LiquidAI/d1-omni-600M-GGUF:Q8_0"
         },
         // "auto" = question flow in the TUI, degrades to steering errors in
         // headless runs. Switch to "headless" to get steering errors at the

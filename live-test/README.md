@@ -3,14 +3,27 @@
 A ready-to-use folder for exercising the castlegate plugin against real OpenCode
 and a real decision model. Intent files land in `.opencode/intent/` (gitignored).
 
-## 0. Start the decision server (terminal 1)
+## 0. Decision server
+
+**Default: none to start.** The config points at the always-on llama.app server
+(`localhost:9092`), which serves multiple installed models and routes by the
+`model` field — including `LiquidAI/d1-omni-600M-GGUF:Q8_0` (tagged `decision`)
+for castlegate's gate/guard. Verify with:
 
 ```bash
-./scripts/start-decision-server.sh
+curl -s http://127.0.0.1:9092/v1/models   # must list the d1 model
 ```
 
-Needs llama.cpp ≥ 0.7.0 (`llama.app` or `brew install llama.cpp`). Check with
-`curl -s http://127.0.0.1:8081/health` → `200`.
+**Alternative: standalone llama-server** (no llama.app, e.g. CI):
+
+```bash
+./scripts/start-decision-server.sh        # serves d1 on :8081
+```
+
+then set `decision.baseURL` back to `http://127.0.0.1:8081/v1/systemone`.
+Needs llama.cpp ≥ 0.7.0. A chat model answering `/v1/systemone` returns
+`501: This model is not a decision model` — castlegate treats that as
+`CASTLEGATE_API_UNAVAILABLE` (fail-closed, no bypass).
 
 ## 1. Interactive tests (TUI)
 
