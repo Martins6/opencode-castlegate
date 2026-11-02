@@ -50,8 +50,10 @@ export const ValidateConfigSchema = z.object({
 });
 export type ValidateConfig = z.infer<typeof ValidateConfigSchema>;
 
+export const DEFAULT_STORAGE_DIR = ".opencode/intent";
+
 export const StorageConfigSchema = z.object({
-  directory: z.string().default(".opencode/intent"),
+  directory: z.string().default(DEFAULT_STORAGE_DIR),
 });
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;
 
@@ -88,7 +90,7 @@ export const CastlegateConfigSchema = z.object({
     cacheTtlMs: 30_000,
   })),
   retries: z.number().int().nonnegative().default(2),
-  storage: StorageConfigSchema.default(() => ({ directory: ".opencode/intent" })),
+  storage: StorageConfigSchema.default(() => ({ directory: DEFAULT_STORAGE_DIR })),
   logging: z.boolean().default(true),
 });
 export type CastlegateConfig = z.infer<typeof CastlegateConfigSchema>;

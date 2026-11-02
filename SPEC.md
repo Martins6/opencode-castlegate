@@ -411,7 +411,7 @@ No silent truncation: an intent that cannot fit the limit is a bug report, not s
 
 ## 7. Logging
 
-All events flow through the app log with `service: "castlegate"` (V1 `client.app.log`; V2 logging equivalent to be confirmed during the port). Tool argument values are never logged; only the keys (e.g. `["command"]`) and the decision evidence (probabilities, confidence). Event list: `gate.update`, `gate.skip`, `guard.allow`, `guard.block`, `approval.replay_allow`, `approval.absorbed`, `intent.too_long`, `api.retry`, `api.unavailable`.
+All events are emitted as one JSON line per event with `service: "castlegate"` to two sinks: stderr (captured by the host log in every mode) and `<storage.directory>/castlegate.log` (append-only, one event per line — the persistent stream survives when stderr never reaches the host log). Every line carries `ts` (ISO timestamp) and `pid` so events from concurrent processes can be told apart and ordered after the fact; `plugin.setup` logs the resolved config, `plugin.dispose` closes the stream, and `config.invalid` is persisted to the log file even though no valid config exists yet. Tool argument values are never logged; only the keys (e.g. `["command"]`) and the decision evidence (probabilities, confidence). Event list: `gate.update`, `gate.skip`, `guard.allow`, `guard.block`, `approval.replay_allow`, `approval.absorbed`, `intent.too_long`, `api.retry`, `api.unavailable`. Logging never throws: a broken file sink warns once with `log.file_unavailable` and degrades to stderr-only.
 
 ## 8. Failure modes
 

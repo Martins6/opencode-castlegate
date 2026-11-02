@@ -142,6 +142,47 @@ After editing files in this repo, restart the host project's OpenCode session. I
 
 If the host project is still using a stale local dependency, run `bun install` from its `.opencode/` directory before restarting the session.
 
+## Debugging
+
+Every structured event (`plugin.setup`, `gate.update`, `gate.skip`,
+`guard.allow`, `guard.block`, `intent.updated`, `api.unavailable`, …) is
+emitted as one JSON line per event to two sinks:
+
+- **stderr** — captured by the host log in every mode, and
+- **`.opencode/intent/castlegate.log`** (inside `storage.directory`) —
+  append-only, so the event stream survives even when stderr never reaches
+  `opencode.log`. With it, "gate skipped vs update failed vs guard
+  false-negative" can be told apart after the fact.
+
+Every line carries `ts` (ISO timestamp) and `pid`, so events from concurrent
+processes can be told apart and ordered after the fact. `plugin.setup` logs
+the resolved config and `plugin.dispose` closes the stream. Tool argument
+values are never logged — only their keys:
+
+```json
+{"ts":"2026-11-02T12:34:56.789Z","pid":4242,"service":"castlegate","level":"info","event":"guard.block","sessionID":"ses_abc","blockId":"cb_x","decision":"deny"}
+```
+
+Useful recipes:
+
+```bash
+# follow the live event stream
+tail -f .opencode/intent/castlegate.log
+
+# everything that happened in one session
+grep '"sessionID":"ses_abc"' .opencode/intent/castlegate.log
+
+# why was this call blocked?
+grep '"event":"guard.block"' .opencode/intent/castlegate.log | jq
+
+# errors only (incl. config.invalid when the plugin disables itself)
+grep '"level":"error"' .opencode/intent/castlegate.log
+```
+
+The file mirrors the `logging` flag (`logging: false` writes only
+`level: "error"` lines). A broken file sink never breaks the plugin: one
+`log.file_unavailable` warning on stderr, then it degrades to stderr-only.
+
 ## Project layout
 
 ```
