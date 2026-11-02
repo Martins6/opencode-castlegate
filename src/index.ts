@@ -7,7 +7,7 @@
  */
 
 import { Plugin } from "@opencode/plugin";
-import { safeParseConfig, type CastlegateConfig } from "./config.ts";
+import { safeParseConfig, DEFAULT_STORAGE_DIR, type CastlegateConfig } from "./config.ts";
 import {
   loadIntent,
   saveIntent,
@@ -39,7 +39,7 @@ import {
   canonicalSignature,
 } from "./approval.ts";
 import { DecisionApiUnavailableError, DecisionRequestError, healthCheck } from "./decision.ts";
-import { createLogger, redactedArgKeys, type Logger } from "./log.ts";
+import { createLogger, redactedArgKeys, serializeEvent, appendLogLine, type Logger } from "./log.ts";
 import { createIntentContextTool } from "./tools/intent-context.ts";
 
 /** Test hook: shrink the 1s debounce in unit tests. */
@@ -111,21 +111,24 @@ export default Plugin.define({
   async setup(ctx) {
     const parsed = safeParseConfig(ctx.options);
     if (!parsed.ok) {
-      console.error(
-        JSON.stringify({
-          service: "castlegate",
-          level: "error",
-          event: "config.invalid",
-          issues: parsed.error.issues,
-        }),
+      // No valid config yet: log against the default storage dir so a config
+      // typo is still visible in castlegate.log, not only on stderr.
+      const serialized = serializeEvent("error", "config.invalid", {
+        issues: parsed.error.issues,
+      });
+      console.error(serialized);
+      await appendLogLine(
+        resolveStorageDir(ctx.location.directory, DEFAULT_STORAGE_DIR),
+        serialized,
       );
       return () => {};
     }
     const cfg: CastlegateConfig = parsed.config;
     if (!cfg.enabled) return () => {};
 
-    const log: Logger = createLogger(cfg);
     const dir = resolveStorageDir(ctx.location.directory, cfg.storage.directory);
+    const log: Logger = createLogger(cfg, dir);
+    await log.event("plugin.setup", { dir, config: cfg });
     const store = createApprovalStore();
     const states = new Map<string, SessionState>();
     const abort = new AbortController();
@@ -609,6 +612,7 @@ export default Plugin.define({
 
     // ── Cleanup (SPEC §6) ──────────────────────────────────────────────
     return async () => {
+      await log.event("plugin.dispose", {});
       abort.abort();
       for (const st of states.values()) {
         if (st.debounce) clearTimeout(st.debounce);
