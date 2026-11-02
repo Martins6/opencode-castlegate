@@ -26,6 +26,7 @@ import {
   CastlegateHeadlessBlockedError,
   CastlegateNoIntentError,
   CastlegateNoIntentExhaustedError,
+  CastlegateDecisionServerNotFoundError,
   isCastlegateError,
 } from "./errors.ts";
 import {
@@ -322,17 +323,23 @@ export default Plugin.define({
     })();
 
     // ── Init-time decision-server health check (SPEC §6) ───────────────
-    void healthCheck(cfg, abort.signal)
-      .then((ok) => {
-        if (!ok) {
-          return log.warn("api.unavailable", {
-            node: "decision",
-            baseURL: cfg.decision.baseURL,
-            hint: "start llama-server with the d1 GGUF or set \"enabled\": false",
-          });
-        }
-      })
-      .catch((err) => log.error("api.healthcheck_error", { error: errMsg(err) }));
+    if (!cfg.decision.baseURL) {
+      await log.warn("api.not_configured", {
+        hint: 'set "decision.baseURL" and "decision.model" in opencode.json (see the README setup) — gated calls throw CASTLEGATE_DECISION_SERVER_NOT_FOUND until then',
+      });
+    } else {
+      void healthCheck(cfg, abort.signal)
+        .then((ok) => {
+          if (!ok) {
+            return log.warn("api.unavailable", {
+              node: "decision",
+              baseURL: cfg.decision.baseURL,
+              hint: "start llama-server with the d1 GGUF or set \"enabled\": false",
+            });
+          }
+        })
+        .catch((err) => log.error("api.healthcheck_error", { error: errMsg(err) }));
+    }
 
     // ── Tool hooks ─────────────────────────────────────────────────────
     await ctx.tool.hook("execute.before", async (event) => {
@@ -352,6 +359,13 @@ export default Plugin.define({
       if (store.isReplayCleared(signature)) {
         await log.event("approval.replay_allow", { sessionID: event.sessionID, tool: event.tool });
         return;
+      }
+
+      // No decision server configured = no validation possible at all. Fail
+      // closed with a setup error (SPEC §4.4 — there is no default server).
+      if (!cfg.decision.baseURL) {
+        await log.event("api.not_configured", { sessionID: event.sessionID, tool: event.tool });
+        throw new CastlegateDecisionServerNotFoundError();
       }
 
       // Subagents validate against the root session's intent (SPEC §5.7).

@@ -12,6 +12,7 @@
 // "api unavailable" error.
 
 import type { CastlegateConfig } from "./config.ts";
+import { CastlegateDecisionServerNotFoundError } from "./errors.ts";
 
 // ---------------------------------------------------------------------------
 // Protocol types (System One / Decision Index schema)
@@ -339,7 +340,7 @@ function errMessage(err: unknown): string {
 // ---------------------------------------------------------------------------
 
 interface SystemOneRequestBody {
-  model: string;
+  model?: string | undefined;
   state: string;
   questions: Record<string, DecisionQuestion>;
 }
@@ -469,9 +470,12 @@ async function attemptOnce(
     ? combineSignals([timeoutSignal, callerSignal])
     : timeoutSignal;
 
+  const baseURL = cfg.decision.baseURL;
+  if (!baseURL) throw new CastlegateDecisionServerNotFoundError();
+
   let res: Response;
   try {
-    res = await fetch(cfg.decision.baseURL, {
+    res = await fetch(baseURL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -487,7 +491,7 @@ async function attemptOnce(
 
   if (res.status === 400) {
     const detail = await readBodySafely(res);
-    throw new DecisionRequestError({ baseURL: cfg.decision.baseURL, status: 400, detail });
+    throw new DecisionRequestError({ baseURL, status: 400, detail });
   }
   if (!res.ok) {
     throw new DecisionCallFailure(`unexpected HTTP ${res.status}`);
@@ -502,6 +506,7 @@ async function callDecisionServer(
   onRetry: ((info: RetryInfo) => void) | undefined,
 ): Promise<DecisionAnswers> {
   const baseURL = cfg.decision.baseURL;
+  if (!baseURL) throw new CastlegateDecisionServerNotFoundError();
   breakerAssertClosed(baseURL);
 
   const attemptsAllowed = cfg.retries + 1;
@@ -551,6 +556,7 @@ async function callDecisionServer(
  *         retries are exhausted, or while the circuit breaker is open
  */
 export async function askDecision(args: AskDecisionArgs): Promise<DecisionAnswers> {
+  if (!args.cfg.decision.baseURL) throw new CastlegateDecisionServerNotFoundError();
   const body: SystemOneRequestBody = {
     model: args.cfg.decision.model,
     state: args.state,
@@ -565,10 +571,12 @@ export async function askDecision(args: AskDecisionArgs): Promise<DecisionAnswer
  * breaker state. Any HTTP response below 500 proves the server is reachable.
  */
 export async function healthCheck(cfg: CastlegateConfig, signal?: AbortSignal): Promise<boolean> {
+  const baseURL = cfg.decision.baseURL;
+  if (!baseURL) return false;
   const timeoutSignal = AbortSignal.timeout(cfg.decision.timeoutMs);
   const combined = signal ? combineSignals([timeoutSignal, signal]) : timeoutSignal;
   try {
-    const res = await fetch(cfg.decision.baseURL, {
+    const res = await fetch(baseURL, {
       method: "POST",
       headers: {
         "content-type": "application/json",

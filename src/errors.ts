@@ -8,7 +8,8 @@ export type CastlegateErrorTag =
   | "CASTLEGATE_INTENT_TOO_LONG"
   | "CASTLEGATE_HEADLESS_BLOCK"
   | "CASTLEGATE_NO_INTENT"
-  | "CASTLEGATE_NO_INTENT_EXHAUSTED";
+  | "CASTLEGATE_NO_INTENT_EXHAUSTED"
+  | "CASTLEGATE_DECISION_SERVER_NOT_FOUND";
 
 const CASTLEGATE_TAGS: ReadonlySet<string> = new Set<CastlegateErrorTag>([
   "CASTLEGATE_INTENT_MISMATCH",
@@ -17,6 +18,7 @@ const CASTLEGATE_TAGS: ReadonlySet<string> = new Set<CastlegateErrorTag>([
   "CASTLEGATE_HEADLESS_BLOCK",
   "CASTLEGATE_NO_INTENT",
   "CASTLEGATE_NO_INTENT_EXHAUSTED",
+  "CASTLEGATE_DECISION_SERVER_NOT_FOUND",
 ]);
 
 /** Structural view of any castlegate-tagged error (works across realms). */
@@ -222,5 +224,22 @@ export class CastlegateNoIntentExhaustedError extends Error {
     this.name = "CastlegateNoIntentExhaustedError";
     this.tool = opts.tool;
     this.maxAttempts = opts.maxAttempts;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CASTLEGATE_DECISION_SERVER_NOT_FOUND (SPEC §4.4 — no default setup)
+// ---------------------------------------------------------------------------
+
+export class CastlegateDecisionServerNotFoundError extends Error {
+  readonly tag = "CASTLEGATE_DECISION_SERVER_NOT_FOUND";
+
+  constructor() {
+    const message =
+      `CASTLEGATE_DECISION_SERVER_NOT_FOUND: castlegate has no decision model server configured, so it cannot validate tool calls.\n` +
+      `Set "decision.baseURL" (and "decision.model") in opencode.json to a System One server running a decision model — see the README's decision-model setup section.\n` +
+      `Action required: tell the user that castlegate needs a decision model server configured. Gated tool calls stay blocked until then.`;
+    super(message);
+    this.name = "CastlegateDecisionServerNotFoundError";
   }
 }

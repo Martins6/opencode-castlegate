@@ -5,8 +5,9 @@ import { parseConfig, safeParseConfig } from "../src/config.ts";
 test("parseConfig accepts empty config and fills spec defaults", () => {
   const cfg = parseConfig({});
   assert.equal(cfg.enabled, true);
-  assert.equal(cfg.decision.baseURL, "http://127.0.0.1:8080/v1/systemone");
-  assert.equal(cfg.decision.model, "LiquidAI/d1-omni-600M-GGUF:Q8_0");
+  // No default decision server: setup is the user's conscious choice (§4.4).
+  assert.equal(cfg.decision.baseURL, undefined);
+  assert.equal(cfg.decision.model, undefined);
   assert.equal(cfg.decision.timeoutMs, 10_000);
   assert.equal(cfg.decision.stateMaxChars, 8000);
   assert.equal(cfg.decision.gateThreshold, 0.5);
@@ -81,7 +82,7 @@ test("parseConfig respects user overrides", () => {
 test("parseConfig fills nested defaults for partially-specified sections", () => {
   const cfg = parseConfig({ decision: { gateThreshold: 0.8 } });
   assert.equal(cfg.decision.gateThreshold, 0.8);
-  assert.equal(cfg.decision.baseURL, "http://127.0.0.1:8080/v1/systemone");
+  assert.equal(cfg.decision.baseURL, undefined); // never defaulted
   assert.equal(cfg.update.model, null);
 });
 

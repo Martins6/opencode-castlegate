@@ -57,7 +57,9 @@ async function main(): Promise<void> {
   const waiters: Array<() => void> = [];
 
   const ctx = {
-    options: {},
+    options: {
+      decision: { baseURL: "http://127.0.0.1:1/v1/systemone", model: "test/decision-model" },
+    },
     location: { directory: dir },
     generate: {
       text: async ({ prompt }: { prompt: string }) => {
