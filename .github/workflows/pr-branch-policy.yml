@@ -1,0 +1,94 @@
+name: PR branch policy
+
+# Routing policy for pull requests:
+#
+#   * Everyone: the pull request must target `dev`.
+#   * Repository owner only: a `dev` -> `main` release promotion pull request.
+#
+# Rulesets cannot stop a pull request from being *opened* against a branch -
+# they only gate pushes and merges - so this workflow enforces the policy and
+# closes offending pull requests. The ruleset on `main` requires the
+# `pr-branch-policy` status reported below before a pull request can merge.
+#
+# The job is named `pr-branch-policy-gate` on purpose: `pull_request_target`
+# check runs are reported against the base-branch SHA, not the pull request
+# head, so the required context `pr-branch-policy` is written explicitly as a
+# commit status on the pull request head SHA. Naming the job after the required
+# context would create two reporters for the same name.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  pull-requests: write
+  issues: write
+  statuses: write
+
+jobs:
+  gate:
+    name: pr-branch-policy-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce pull request target branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_STATE: ${{ github.event.pull_request.state }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          allowed=false
+          if [ "$BASE_REF" = "dev" ]; then
+            allowed=true
+          elif [ "$BASE_REF" = "main" ] \
+            && [ "$HEAD_REF" = "dev" ] \
+            && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] \
+            && [ "$PR_AUTHOR" = "$GITHUB_REPOSITORY_OWNER" ]; then
+            allowed=true
+          fi
+
+          if [ "$allowed" = "true" ]; then
+            state=success
+            description="Allowed: $HEAD_REF -> $BASE_REF"
+          else
+            state=failure
+            description="Blocked: only 'dev' is an allowed base branch"
+          fi
+
+          # Required status check, reported against the pull request head SHA.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -F state="$state" \
+            -F context="pr-branch-policy" \
+            -F description="$description" \
+            -F target_url="$RUN_URL" > /dev/null
+
+          if [ "$allowed" = "true" ]; then
+            echo "PR #$PR_NUMBER ($HEAD_REF -> $BASE_REF) by $PR_AUTHOR satisfies the policy."
+            exit 0
+          fi
+
+          echo "::error::PR #$PR_NUMBER ($HEAD_REF -> $BASE_REF) by $PR_AUTHOR targets a blocked base branch."
+
+          if [ "$PR_STATE" = "open" ]; then
+            body=$(cat <<'EOF'
+          Thanks for the pull request! This repository routes all work through the `dev` branch.
+
+          **Pull requests must target `dev`.** The only exception is the repository owner's `dev` -> `main` release promotion.
+
+          To fix this pull request, click **Edit** at the top right and change the base branch to `dev`, then click **Reopen pull request**. The `pr-branch-policy` check re-runs automatically and passes once the base branch is `dev`.
+          EOF
+          )
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -F body="$body" > /dev/null || echo "::warning::could not post policy comment"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              -F state=closed > /dev/null || echo "::warning::could not close the pull request"
+          fi
+
+          exit 1
