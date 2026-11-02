@@ -243,6 +243,20 @@ This session is headless: the user cannot approve or reject your action right no
 Action required: do NOT try to approve this. Use a different shell command that fits the user's stated intent. If this exact command is truly necessary, tell the user to run it from an interactive session.
 ```
 
+Thrown while the intent is not yet established (`validate.onMissingIntent: "block"`, §5.5):
+
+```
+CASTLEGATE_NO_INTENT: tool '<name>' is blocked: the session intent is not established yet (attempt <n> of <max>).
+The intent lands within seconds of the first user message.
+Action required: wait <retrySeconds>s, then retry this exact call once. Do not retry sooner.
+```
+
+```
+CASTLEGATE_NO_INTENT_EXHAUSTED: tool '<name>' is blocked: the session intent never appeared after <max> attempts.
+Something is wrong with castlegate — it cannot validate tool calls and keeps blocking this session.
+Action required: stop retrying. Ask the user to decide whether to disable the opencode-castlegate plugin ("enabled": false or comment it out in opencode.json) — something is wrong and needs fixing.
+```
+
 ### 4.4 Config
 
 Options are passed through the V2 `plugins` entry and read from `ctx.options`:
@@ -284,6 +298,9 @@ Options are passed through the V2 `plugins` entry and read from `ctx.options`:
           "skip": [],
           "requireApprovalOnMismatch": true,
           "onApiUnavailable": "block", // "block" = fail closed (default) | "allow" = fail open while the server is down
+          "onMissingIntent": "block", // "block" = CASTLEGATE_NO_INTENT until the intent lands (default) | "allow" = legacy pass-through
+          "noIntentRetrySeconds": 60, // wait told to the agent between attempts
+          "noIntentMaxAttempts": 3, // final attempt escalates to CASTLEGATE_NO_INTENT_EXHAUSTED
           "cacheTtlMs": 30000
         },
         "retries": 2, // per decision-server call, before giving up
@@ -328,7 +345,14 @@ Each decision-server call retries `retries` times (default 2) with exponential b
 
 ### 5.5 What happens when no intent exists yet
 
-`validate.skip_no_intent` is logged and the tool call is allowed through. The gate always votes "update" when no intent exists, so the first batch populates it.
+`validate.onMissingIntent` decides (default **`"block"`** — fail closed):
+
+| `onMissingIntent` | Behavior |
+|---|---|
+| `"block"` | Gated calls are rejected with `CASTLEGATE_NO_INTENT` (§4.3) — attempts 1..`max-1` of `validate.noIntentMaxAttempts` (default **3**), each telling the agent to wait `validate.noIntentRetrySeconds` (default **60**) and retry the exact call once. On the final attempt the error becomes `CASTLEGATE_NO_INTENT_EXHAUSTED`: stop retrying and ask the user whether to disable the plugin — something is wrong. Attempts are tracked per session. |
+| `"allow"` | Legacy pass-through: `validate.skip_no_intent` is logged and the call is allowed (nothing to validate against yet). |
+
+Either way the gate always votes "update" when no intent exists, so the first user-message batch populates it.
 
 ### 5.6 Enforce max chars (shrink loop)
 
@@ -391,7 +415,7 @@ All events flow through the app log with `service: "castlegate"` (V1 `client.app
 | Guard low confidence | escalation instead of auto-allow | Intended: uncertain → ask the user (§5.3) |
 | Question form cancelled (headless) | agent loops on an unanswerable question | steering error `CASTLEGATE_HEADLESS_BLOCK`, session marked headless (§3.6) |
 | State exceeds the server batch (`-b`/`-ub`) | request rejected (400) or decisive context truncated | `decision.stateMaxChars` trim with anchor intent + clearances first (default 8000); 400 is a config error, never `CASTLEGATE_API_UNAVAILABLE`; document raising `-b`/`-ub` up to 16384 |
-| Intent file corrupted | `loadIntent` returns `null` → treated as no intent → tool allowed | Atomic writes + version field; future: checksum |
+| Intent file corrupted | `loadIntent` returns `null` → treated as no intent → `validate.onMissingIntent` decides (§5.5) | Atomic writes + version field; future: checksum |
 | Two intent updates race | a stale draft would clobber a newer intent | CAS on `intentVersion` (§3.3): the stale draft is discarded, the update re-run |
 | Session deleted while an update is pending | orphan intent file re-created after the delete | tombstone + debounce cancel on delete (§6): in-flight saves for a dead session are discarded |
 

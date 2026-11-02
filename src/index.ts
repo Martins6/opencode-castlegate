@@ -24,6 +24,8 @@ import {
   CastlegateApiUnavailableError,
   CastlegateIntentTooLongError,
   CastlegateHeadlessBlockedError,
+  CastlegateNoIntentError,
+  CastlegateNoIntentExhaustedError,
   isCastlegateError,
 } from "./errors.ts";
 import {
@@ -51,6 +53,8 @@ interface SessionState {
   inFlight: boolean;
   /** messageID -> user text (source for edit/removal oldText, SPEC §3.2 revocations). */
   userTexts: Map<string, string>;
+  /** Gated calls blocked by CASTLEGATE_NO_INTENT (SPEC §5.5). */
+  noIntentAttempts: number;
 }
 
 function parseModelRef(ref: string): { providerID: string; id: string } {
@@ -128,7 +132,7 @@ export default Plugin.define({
     const state = (sessionID: string): SessionState => {
       let st = states.get(sessionID);
       if (!st) {
-        st = { queue: [], debounce: undefined, inFlight: false, userTexts: new Map() };
+        st = { queue: [], debounce: undefined, inFlight: false, userTexts: new Map(), noIntentAttempts: 0 };
         states.set(sessionID, st);
       }
       return st;
@@ -370,8 +374,36 @@ export default Plugin.define({
       }
 
       if (!file || file.body.trim() === "") {
-        await log.event("validate.skip_no_intent", { sessionID: event.sessionID, tool: event.tool });
-        return;
+        if (cfg.validate.onMissingIntent === "allow") {
+          await log.event("validate.skip_no_intent", { sessionID: event.sessionID, tool: event.tool });
+          return;
+        }
+        // Fail closed (SPEC §5.5): bounded retries, then tell the agent to
+        // escalate to the user about the plugin itself.
+        const st = state(event.sessionID);
+        st.noIntentAttempts += 1;
+        if (st.noIntentAttempts >= cfg.validate.noIntentMaxAttempts) {
+          await log.event("validate.no_intent_exhausted", {
+            sessionID: event.sessionID,
+            tool: event.tool,
+            attempt: st.noIntentAttempts,
+          });
+          throw new CastlegateNoIntentExhaustedError({
+            tool: event.tool,
+            maxAttempts: cfg.validate.noIntentMaxAttempts,
+          });
+        }
+        await log.event("validate.no_intent_block", {
+          sessionID: event.sessionID,
+          tool: event.tool,
+          attempt: st.noIntentAttempts,
+        });
+        throw new CastlegateNoIntentError({
+          tool: event.tool,
+          attempt: st.noIntentAttempts,
+          maxAttempts: cfg.validate.noIntentMaxAttempts,
+          retrySeconds: cfg.validate.noIntentRetrySeconds,
+        });
       }
 
       try {

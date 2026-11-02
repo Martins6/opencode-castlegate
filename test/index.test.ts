@@ -636,3 +636,91 @@ test("a failed question without a pending block never marks the session", async 
   await cleanup();
   fake.restore();
 });
+
+// ── No-intent fail-closed (SPEC §5.5) ───────────────────────────────────
+
+test("onMissingIntent=block: bounded NO_INTENT retries, then EXHAUSTED", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir(); // no intent file at all
+  const fake = makeFakeCtx({ directory: dir });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  const call = (id: string) =>
+    fake.runHook("execute.before", {
+      tool: "shell",
+      input: { command: "ls" },
+      sessionID: "ses_ni",
+      messageID: "m",
+      id,
+    });
+
+  await assert.rejects(() => call("c1"), (err: unknown) => {
+    assert.equal((err as { tag: string }).tag, "CASTLEGATE_NO_INTENT");
+    assert.match(msg(err), /\(attempt 1 of 3\)/);
+    assert.match(msg(err), /wait 60s, then retry this exact call once/);
+    return true;
+  });
+  await assert.rejects(() => call("c2"), (err: unknown) => {
+    assert.equal((err as { tag: string }).tag, "CASTLEGATE_NO_INTENT");
+    assert.match(msg(err), /\(attempt 2 of 3\)/);
+    return true;
+  });
+  await assert.rejects(() => call("c3"), (err: unknown) => {
+    assert.equal((err as { tag: string }).tag, "CASTLEGATE_NO_INTENT_EXHAUSTED");
+    assert.match(msg(err), /stop retrying/);
+    assert.match(msg(err), /disable the opencode-castlegate plugin/);
+    return true;
+  });
+  await cleanup();
+  fake.restore();
+});
+
+test("onMissingIntent=allow restores the pass-through behavior", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  const fake = makeFakeCtx({
+    directory: dir,
+    options: { validate: { onMissingIntent: "allow" } },
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  await fake.runHook("execute.before", {
+    tool: "shell",
+    input: { command: "ls" },
+    sessionID: "ses_ni2",
+    messageID: "m",
+    id: "c1",
+  }); // must not throw
+  await cleanup();
+  fake.restore();
+});
+
+test("no-intent attempts are tracked per session", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  const fake = makeFakeCtx({ directory: dir });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  const call = (sessionID: string, id: string) =>
+    fake.runHook("execute.before", {
+      tool: "shell",
+      input: { command: "ls" },
+      sessionID,
+      messageID: "m",
+      id,
+    });
+
+  await assert.rejects(() => call("ses_a", "c1"), (err: unknown) =>
+    (err as { tag: string }).tag === "CASTLEGATE_NO_INTENT",
+  );
+  await assert.rejects(() => call("ses_a", "c2"), (err: unknown) =>
+    (err as { tag: string }).tag === "CASTLEGATE_NO_INTENT",
+  );
+  // A different session starts its own count.
+  await assert.rejects(() => call("ses_b", "c3"), (err: unknown) => {
+    assert.match(msg(err), /\(attempt 1 of 3\)/);
+    return true;
+  });
+  await cleanup();
+  fake.restore();
+});

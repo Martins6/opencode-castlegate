@@ -23,6 +23,9 @@ test("parseConfig accepts empty config and fills spec defaults", () => {
   assert.deepEqual(cfg.validate.skip, []);
   assert.equal(cfg.validate.requireApprovalOnMismatch, true);
   assert.equal(cfg.validate.onApiUnavailable, "block");
+  assert.equal(cfg.validate.onMissingIntent, "block");
+  assert.equal(cfg.validate.noIntentRetrySeconds, 60);
+  assert.equal(cfg.validate.noIntentMaxAttempts, 3);
   assert.equal(cfg.validate.cacheTtlMs, 30_000);
   assert.equal(cfg.retries, 2);
   assert.equal(cfg.storage.directory, ".opencode/intent");
@@ -48,6 +51,9 @@ test("parseConfig respects user overrides", () => {
       skip: ["read"],
       requireApprovalOnMismatch: false,
       onApiUnavailable: "allow",
+      onMissingIntent: "allow",
+      noIntentRetrySeconds: 5,
+      noIntentMaxAttempts: 1,
       cacheTtlMs: 1000,
     },
     retries: 0,
@@ -64,6 +70,9 @@ test("parseConfig respects user overrides", () => {
   assert.deepEqual(cfg.validate.tools, ["shell", "edit"]);
   assert.deepEqual(cfg.validate.skip, ["read"]);
   assert.equal(cfg.validate.onApiUnavailable, "allow");
+  assert.equal(cfg.validate.onMissingIntent, "allow");
+  assert.equal(cfg.validate.noIntentRetrySeconds, 5);
+  assert.equal(cfg.validate.noIntentMaxAttempts, 1);
   assert.equal(cfg.retries, 0);
   assert.equal(cfg.storage.directory, "/tmp/x");
   assert.equal(cfg.logging, false);
