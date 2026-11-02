@@ -28,6 +28,10 @@ function makeFakeCtx(opts: FakeOptions) {
   const generateCalls: string[] = [];
 
   const messages = [...(opts.messages ?? [])];
+  const options = {
+    decision: { baseURL: "http://127.0.0.1:1/v1/systemone" },
+    ...opts.options,
+  };
   const decision = {
     noul: opts.decision?.noul ?? 0.9,
     scope: opts.decision?.scope ?? "within_scope",
@@ -78,7 +82,7 @@ function makeFakeCtx(opts: FakeOptions) {
   }) as typeof fetch;
 
   const ctx = {
-    options: opts.options ?? {},
+    options,
     location: { directory: opts.directory },
     generate: {
       text: async ({ prompt }: { prompt: string }) => {
@@ -721,6 +725,36 @@ test("no-intent attempts are tracked per session", async () => {
     assert.match(msg(err), /\(attempt 1 of 3\)/);
     return true;
   });
+  await cleanup();
+  fake.restore();
+});
+
+test("unconfigured decision server: gated calls throw CASTLEGATE_DECISION_SERVER_NOT_FOUND", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  await seedIntent(dir, "ses_nc");
+  const fake = makeFakeCtx({
+    directory: dir,
+    options: { decision: {} }, // deliberately no baseURL
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  await assert.rejects(
+    () =>
+      fake.runHook("execute.before", {
+        tool: "shell",
+        input: { command: "ls" },
+        sessionID: "ses_nc",
+        messageID: "m",
+        id: "c1",
+      }),
+    (err: unknown) => {
+      assert.equal((err as { tag: string }).tag, "CASTLEGATE_DECISION_SERVER_NOT_FOUND");
+      assert.match(msg(err), /decision\.baseURL/);
+      assert.match(msg(err), /tell the user/);
+      return true;
+    },
+  );
   await cleanup();
   fake.restore();
 });

@@ -60,8 +60,21 @@ function jsonResponse(payload: unknown, status = 200): Response {
 const GATE_QUESTION: DecisionQuestion = { type: "noul", instructions: "Does this change the intent?" };
 
 function gateConfig(extra: Record<string, unknown> = {}) {
-  return parseConfig({ retries: 0, ...extra });
+  return parseConfig({
+    retries: 0,
+    decision: { baseURL: "http://127.0.0.1:8080/v1/systemone", model: "test/decision-model" }, // test fixtures
+    ...extra,
+  });
 }
+
+test("askDecision throws CASTLEGATE_DECISION_SERVER_NOT_FOUND without a configured baseURL", async () => {
+  const cfg = parseConfig({});
+  await assert.rejects(
+    () => askDecision({ cfg, state: "s", questions: { q: { type: "noul", instructions: "?" } } }),
+    (err: unknown) => (err as { tag?: string }).tag === "CASTLEGATE_DECISION_SERVER_NOT_FOUND",
+  );
+  assert.equal(await healthCheck(cfg), false);
+});
 
 // ---------------------------------------------------------------------------
 // Protocol parsing
@@ -116,7 +129,7 @@ test("askDecision parses noul/choice/score answers and exposes them via the help
     questions: Record<string, { type: string }>;
   };
   assert.equal(calls[0]?.url, "http://127.0.0.1:8080/v1/systemone");
-  assert.equal(body.model, "LiquidAI/d1-omni-600M-GGUF:Q8_0");
+  assert.equal(body.model, "test/decision-model");
   assert.equal(body.state, "anchor intent text");
   assert.deepEqual(Object.keys(body.questions).sort(), ["gate", "scope", "severity"]);
   assert.equal(body.questions["gate"]?.type, "noul");

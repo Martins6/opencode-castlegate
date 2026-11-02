@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 export const DecisionConfigSchema = z.object({
-  // System One decision model server (llama.cpp llama-server with the d1 GGUF)
-  baseURL: z.string().min(1).default("http://127.0.0.1:8080/v1/systemone"),
-  model: z.string().min(1).default("LiquidAI/d1-omni-600M-GGUF:Q8_0"), // ignored by single-model servers
+  // System One decision model server (llama.cpp llama-server or llama.app with
+  // a d1-family model). NO default: the user must set up a decision server
+  // consciously — without one, gated calls throw CASTLEGATE_DECISION_SERVER_NOT_FOUND.
+  baseURL: z.string().min(1).optional(),
+  model: z.string().min(1).optional(), // required by multi-model servers (e.g. llama.app); ignored by single-model ones
   timeoutMs: z.number().int().positive().default(10_000),
   stateMaxChars: z.number().int().positive().default(8000),
   gateThreshold: z.number().min(0).max(1).default(0.5),
@@ -56,8 +58,6 @@ export type StorageConfig = z.infer<typeof StorageConfigSchema>;
 export const CastlegateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   decision: DecisionConfigSchema.default(() => ({
-    baseURL: "http://127.0.0.1:8080/v1/systemone",
-    model: "LiquidAI/d1-omni-600M-GGUF:Q8_0",
     timeoutMs: 10_000,
     stateMaxChars: 8000,
     gateThreshold: 0.5,

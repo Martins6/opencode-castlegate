@@ -7,6 +7,7 @@ import {
   CastlegateHeadlessBlockedError,
   CastlegateNoIntentError,
   CastlegateNoIntentExhaustedError,
+  CastlegateDecisionServerNotFoundError,
   isCastlegateError,
 } from "../src/errors.ts";
 
@@ -200,5 +201,19 @@ test("CastlegateNoIntentExhaustedError message matches the SPEC §5.5 template e
     ].join("\n"),
   );
   assert.equal(err.tag, "CASTLEGATE_NO_INTENT_EXHAUSTED");
+  assert.equal(isCastlegateError(err), true);
+});
+
+test("CastlegateDecisionServerNotFoundError message matches the SPEC §4.4 template exactly", () => {
+  const err = new CastlegateDecisionServerNotFoundError();
+  assert.equal(
+    err.message,
+    [
+      "CASTLEGATE_DECISION_SERVER_NOT_FOUND: castlegate has no decision model server configured, so it cannot validate tool calls.",
+      'Set "decision.baseURL" (and "decision.model") in opencode.json to a System One server running a decision model — see the README\'s decision-model setup section.',
+      "Action required: tell the user that castlegate needs a decision model server configured. Gated tool calls stay blocked until then.",
+    ].join("\n"),
+  );
+  assert.equal(err.tag, "CASTLEGATE_DECISION_SERVER_NOT_FOUND");
   assert.equal(isCastlegateError(err), true);
 });

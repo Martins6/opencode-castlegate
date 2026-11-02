@@ -257,6 +257,14 @@ Something is wrong with castlegate — it cannot validate tool calls and keeps b
 Action required: stop retrying. Ask the user to decide whether to disable the opencode-castlegate plugin ("enabled": false or comment it out in opencode.json) — something is wrong and needs fixing.
 ```
 
+Thrown on every gated call while no decision server is configured (§4.4 — there is deliberately no default):
+
+```
+CASTLEGATE_DECISION_SERVER_NOT_FOUND: castlegate has no decision model server configured, so it cannot validate tool calls.
+Set "decision.baseURL" (and "decision.model") in opencode.json to a System One server running a decision model — see the README's decision-model setup section.
+Action required: tell the user that castlegate needs a decision model server configured. Gated tool calls stay blocked until then.
+```
+
 ### 4.4 Config
 
 Options are passed through the V2 `plugins` entry and read from `ctx.options`:
@@ -270,9 +278,11 @@ Options are passed through the V2 `plugins` entry and read from `ctx.options`:
       "options": {
         "enabled": true,
         "decision": {
-          // System One decision model server (llama.cpp llama-server with the d1 GGUF)
-          "baseURL": "http://127.0.0.1:8080/v1/systemone",
-          "model": "LiquidAI/d1-omni-600M-GGUF:Q8_0", // ignored by single-model servers
+          // System One decision model server. REQUIRED — there is no default:
+          // without it every gated call throws CASTLEGATE_DECISION_SERVER_NOT_FOUND.
+          // llama.cpp llama-server or llama.app running a d1-family model.
+          "baseURL": "http://127.0.0.1:9092/v1/systemone",
+          "model": "LiquidAI/d1-omni-600M-GGUF:Q8_0", // required by multi-model servers (llama.app); ignored by single-model ones
           "timeoutMs": 10000,
           "stateMaxChars": 8000, // state trim so the request fits the server batch (-b/-ub); a 400 here is a config error, never "api unavailable"
           "gateThreshold": 0.5, // P(update) above this → update the intent
@@ -407,6 +417,7 @@ All events flow through the app log with `service: "castlegate"` (V1 `client.app
 
 | Mode | Symptom | Mitigation |
 |---|---|---|
+| Decision server not configured | `CASTLEGATE_DECISION_SERVER_NOT_FOUND` on every gated call | Deliberate: setup is a conscious step (§4.4) — README setup section; no silent default |
 | Decision server unreachable | `api.unavailable`; `CastlegateApiUnavailableError` after retries | Retries + circuit breaker + "comment out plugin" guidance |
 | Update generation fails (`ctx.generate.text`) | `intent.update_error`; intent unchanged | Same policy; guard keeps validating against the old intent |
 | Absorption update fails after an approval | clearance not written to the intent; identical command still passes via the replay TTL | replay allow (§3.5) covers `approval.replayTtlMs`; absorption retried on the next gate update; if the TTL expired the agent re-asks the user |
