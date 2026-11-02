@@ -13,6 +13,7 @@ test("parseConfig accepts empty config and fills spec defaults", () => {
   assert.equal(cfg.decision.safeConfidence, 0.85);
   assert.equal(cfg.update.model, null);
   assert.equal(cfg.update.timeoutMs, 60_000);
+  assert.equal(cfg.approval.mode, "auto");
   assert.equal(cfg.approval.absorbWaitSeconds, 60);
   assert.equal(cfg.approval.replayTtlMs, 300_000);
   assert.equal(cfg.intent.maxChars, 10_000);
@@ -22,6 +23,9 @@ test("parseConfig accepts empty config and fills spec defaults", () => {
   assert.deepEqual(cfg.validate.skip, []);
   assert.equal(cfg.validate.requireApprovalOnMismatch, true);
   assert.equal(cfg.validate.onApiUnavailable, "block");
+  assert.equal(cfg.validate.onMissingIntent, "block");
+  assert.equal(cfg.validate.noIntentRetrySeconds, 60);
+  assert.equal(cfg.validate.noIntentMaxAttempts, 3);
   assert.equal(cfg.validate.cacheTtlMs, 30_000);
   assert.equal(cfg.retries, 2);
   assert.equal(cfg.storage.directory, ".opencode/intent");
@@ -40,13 +44,16 @@ test("parseConfig respects user overrides", () => {
       safeConfidence: 0.9,
     },
     update: { model: "anthropic/claude-haiku-4-5", timeoutMs: 30_000 },
-    approval: { absorbWaitSeconds: 30, replayTtlMs: 60_000 },
+    approval: { mode: "headless", absorbWaitSeconds: 30, replayTtlMs: 60_000 },
     intent: { maxChars: 2000, shrinkAttempts: 5, maxRecentMessages: 10 },
     validate: {
       tools: ["shell", "edit"],
       skip: ["read"],
       requireApprovalOnMismatch: false,
       onApiUnavailable: "allow",
+      onMissingIntent: "allow",
+      noIntentRetrySeconds: 5,
+      noIntentMaxAttempts: 1,
       cacheTtlMs: 1000,
     },
     retries: 0,
@@ -57,11 +64,15 @@ test("parseConfig respects user overrides", () => {
   assert.equal(cfg.decision.baseURL, "http://10.0.0.5:9999/v1/systemone");
   assert.equal(cfg.decision.gateThreshold, 0.7);
   assert.equal(cfg.update.model, "anthropic/claude-haiku-4-5");
+  assert.equal(cfg.approval.mode, "headless");
   assert.equal(cfg.approval.absorbWaitSeconds, 30);
   assert.equal(cfg.intent.maxChars, 2000);
   assert.deepEqual(cfg.validate.tools, ["shell", "edit"]);
   assert.deepEqual(cfg.validate.skip, ["read"]);
   assert.equal(cfg.validate.onApiUnavailable, "allow");
+  assert.equal(cfg.validate.onMissingIntent, "allow");
+  assert.equal(cfg.validate.noIntentRetrySeconds, 5);
+  assert.equal(cfg.validate.noIntentMaxAttempts, 1);
   assert.equal(cfg.retries, 0);
   assert.equal(cfg.storage.directory, "/tmp/x");
   assert.equal(cfg.logging, false);
@@ -78,6 +89,7 @@ test("safeParseConfig returns ok:false with zod error on bad input", () => {
   const r = safeParseConfig({
     decision: { stateMaxChars: -1 },
     validate: { onApiUnavailable: "maybe" },
+    approval: { mode: "sometimes" },
   });
   assert.equal(r.ok, false);
   if (!r.ok) {

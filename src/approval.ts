@@ -32,12 +32,17 @@ export interface PendingBlock {
   signature: string;
   /** ISO timestamp of the block. */
   blockedAt: string;
+  /** Decision evidence from the guard (for the steering error, §3.6). */
+  reason?: string;
+  severity?: "low" | "medium" | "high";
 }
 
 export interface OpenBlockInput {
   sessionId: string;
   tool: string;
   args: unknown;
+  reason?: string;
+  severity?: "low" | "medium" | "high";
   now?: () => number;
 }
 
@@ -50,6 +55,8 @@ export function openBlock(input: OpenBlockInput): PendingBlock {
     args: input.args,
     signature: canonicalSignature(input.tool, input.args),
     blockedAt: new Date(nowMs).toISOString(),
+    ...(input.reason !== undefined ? { reason: input.reason } : {}),
+    ...(input.severity !== undefined ? { severity: input.severity } : {}),
   };
 }
 
@@ -71,6 +78,8 @@ export class PendingBlockStore {
   private readonly blocks = new Map<string, PendingBlock>();
   /** signature → expiry epoch ms (wall clock per the owner's decision). */
   private readonly replay = new Map<string, number>();
+  /** Sessions proven headless by a cancelled/unanswered question (SPEC §3.6). */
+  private readonly headless = new Set<string>();
 
   add(block: PendingBlock): void {
     this.blocks.set(block.blockId, block);
@@ -94,6 +103,16 @@ export class PendingBlockStore {
 
   clear(): void {
     this.blocks.clear();
+    this.headless.clear();
+  }
+
+  /** Mark a session as headless: nobody can answer approval questions (§3.6). */
+  markHeadless(sessionId: string): void {
+    this.headless.add(sessionId);
+  }
+
+  isHeadless(sessionId: string): boolean {
+    return this.headless.has(sessionId);
   }
 
   markReplayCleared(signature: string, ttlMs: number, now?: () => number): void {

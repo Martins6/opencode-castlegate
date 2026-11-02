@@ -19,6 +19,9 @@ export const UpdateConfigSchema = z.object({
 export type UpdateConfig = z.infer<typeof UpdateConfigSchema>;
 
 export const ApprovalConfigSchema = z.object({
+  // "auto" = question flow, degrades to steering when headless (SPEC §3.6)
+  // | "headless" = steering error from block #1
+  mode: z.enum(["auto", "headless"]).default("auto"),
   absorbWaitSeconds: z.number().int().positive().default(60),
   replayTtlMs: z.number().int().positive().default(300_000),
 });
@@ -36,6 +39,11 @@ export const ValidateConfigSchema = z.object({
   skip: z.array(z.string()).default([]),
   requireApprovalOnMismatch: z.boolean().default(true),
   onApiUnavailable: z.enum(["block", "allow"]).default("block"),
+  // Gated call before the intent exists: "block" fails closed with
+  // CASTLEGATE_NO_INTENT (SPEC §5.5); "allow" restores the legacy pass-through.
+  onMissingIntent: z.enum(["block", "allow"]).default("block"),
+  noIntentRetrySeconds: z.number().int().positive().default(60),
+  noIntentMaxAttempts: z.number().int().positive().default(3),
   cacheTtlMs: z.number().int().nonnegative().default(30_000),
 });
 export type ValidateConfig = z.infer<typeof ValidateConfigSchema>;
@@ -60,6 +68,7 @@ export const CastlegateConfigSchema = z.object({
     timeoutMs: 60_000,
   })),
   approval: ApprovalConfigSchema.default(() => ({
+    mode: "auto" as const,
     absorbWaitSeconds: 60,
     replayTtlMs: 300_000,
   })),
@@ -73,6 +82,9 @@ export const CastlegateConfigSchema = z.object({
     skip: [] as string[],
     requireApprovalOnMismatch: true,
     onApiUnavailable: "block" as const,
+    onMissingIntent: "block" as const,
+    noIntentRetrySeconds: 60,
+    noIntentMaxAttempts: 3,
     cacheTtlMs: 30_000,
   })),
   retries: z.number().int().nonnegative().default(2),

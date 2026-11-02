@@ -5,12 +5,18 @@
 export type CastlegateErrorTag =
   | "CASTLEGATE_INTENT_MISMATCH"
   | "CASTLEGATE_API_UNAVAILABLE"
-  | "CASTLEGATE_INTENT_TOO_LONG";
+  | "CASTLEGATE_INTENT_TOO_LONG"
+  | "CASTLEGATE_HEADLESS_BLOCK"
+  | "CASTLEGATE_NO_INTENT"
+  | "CASTLEGATE_NO_INTENT_EXHAUSTED";
 
 const CASTLEGATE_TAGS: ReadonlySet<string> = new Set<CastlegateErrorTag>([
   "CASTLEGATE_INTENT_MISMATCH",
   "CASTLEGATE_API_UNAVAILABLE",
   "CASTLEGATE_INTENT_TOO_LONG",
+  "CASTLEGATE_HEADLESS_BLOCK",
+  "CASTLEGATE_NO_INTENT",
+  "CASTLEGATE_NO_INTENT_EXHAUSTED",
 ]);
 
 /** Structural view of any castlegate-tagged error (works across realms). */
@@ -127,5 +133,94 @@ export class CastlegateIntentTooLongError extends Error {
     this.name = "CastlegateIntentTooLongError";
     this.maxChars = opts.maxChars;
     this.shrinkAttempts = opts.shrinkAttempts;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CASTLEGATE_HEADLESS_BLOCK (SPEC §3.6, §4.3)
+// ---------------------------------------------------------------------------
+
+export interface CastlegateHeadlessBlockedOptions {
+  tool: string;
+  reason: string;
+  severity: MismatchSeverity;
+  blockedAt: string; // ISO timestamp
+}
+
+export class CastlegateHeadlessBlockedError extends Error {
+  readonly tag = "CASTLEGATE_HEADLESS_BLOCK";
+  readonly tool: string;
+  readonly reason: string;
+  readonly severity: MismatchSeverity;
+  readonly blockedAt: string;
+
+  constructor(opts: CastlegateHeadlessBlockedOptions) {
+    const message =
+      `CASTLEGATE_HEADLESS_BLOCK: tool '${opts.tool}' is blocked and cannot be approved here.\n` +
+      `Reason: ${opts.reason}\n` +
+      `Severity: ${opts.severity}\n` +
+      `Blocked at: ${opts.blockedAt}\n` +
+      `This session is headless: the user cannot approve or reject your action right now.\n` +
+      `Action required: do NOT try to approve this. Use a different shell command that fits the user's stated intent. If this exact command is truly necessary, tell the user to run it from an interactive session.`;
+    super(message);
+    this.name = "CastlegateHeadlessBlockedError";
+    this.tool = opts.tool;
+    this.reason = opts.reason;
+    this.severity = opts.severity;
+    this.blockedAt = opts.blockedAt;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CASTLEGATE_NO_INTENT / CASTLEGATE_NO_INTENT_EXHAUSTED (SPEC §5.5)
+// ---------------------------------------------------------------------------
+
+export interface CastlegateNoIntentOptions {
+  tool: string;
+  attempt: number;
+  maxAttempts: number;
+  retrySeconds: number;
+}
+
+export class CastlegateNoIntentError extends Error {
+  readonly tag = "CASTLEGATE_NO_INTENT";
+  readonly tool: string;
+  readonly attempt: number;
+  readonly maxAttempts: number;
+  readonly retrySeconds: number;
+
+  constructor(opts: CastlegateNoIntentOptions) {
+    const message =
+      `CASTLEGATE_NO_INTENT: tool '${opts.tool}' is blocked: the session intent is not established yet (attempt ${opts.attempt} of ${opts.maxAttempts}).\n` +
+      `The intent lands within seconds of the first user message.\n` +
+      `Action required: wait ${opts.retrySeconds}s, then retry this exact call once. Do not retry sooner.`;
+    super(message);
+    this.name = "CastlegateNoIntentError";
+    this.tool = opts.tool;
+    this.attempt = opts.attempt;
+    this.maxAttempts = opts.maxAttempts;
+    this.retrySeconds = opts.retrySeconds;
+  }
+}
+
+export interface CastlegateNoIntentExhaustedOptions {
+  tool: string;
+  maxAttempts: number;
+}
+
+export class CastlegateNoIntentExhaustedError extends Error {
+  readonly tag = "CASTLEGATE_NO_INTENT_EXHAUSTED";
+  readonly tool: string;
+  readonly maxAttempts: number;
+
+  constructor(opts: CastlegateNoIntentExhaustedOptions) {
+    const message =
+      `CASTLEGATE_NO_INTENT_EXHAUSTED: tool '${opts.tool}' is blocked: the session intent never appeared after ${opts.maxAttempts} attempts.\n` +
+      `Something is wrong with castlegate — it cannot validate tool calls and keeps blocking this session.\n` +
+      `Action required: stop retrying. Ask the user to decide whether to disable the opencode-castlegate plugin ("enabled": false or comment it out in opencode.json) — something is wrong and needs fixing.`;
+    super(message);
+    this.name = "CastlegateNoIntentExhaustedError";
+    this.tool = opts.tool;
+    this.maxAttempts = opts.maxAttempts;
   }
 }

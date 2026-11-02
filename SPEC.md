@@ -11,7 +11,7 @@ OpenCode V2 plugin that gates `shell` tool calls against the user's stated sessi
 Per gated tool call:
 
 - **Safe** → tool runs (no user prompt).
-- **Not safe** → tool is blocked with a tagged error; the main agent asks the user via its `question` tool. On approval, the clearance is absorbed into the intent so the same command (and close variants) is allowed from then on.
+- **Not safe** → tool is blocked with a tagged error; the main agent asks the user via its `question` tool. On approval, the clearance is absorbed into the intent so the same command (and close variants) is allowed from then on. In headless sessions no one can answer, so the block instead steers the agent to a different command (§3.6).
 
 All binary decisions come from a **decision model** (LiquidAI **d1-omni-600M**, served by llama.cpp) that scores typed options and returns calibrated probabilities in one forward pass. There is **no JSON parsing on the decision path** — decisions are floats and typed option picks, never generated text. The only call that generates text is the intent update, and it runs on the user's own OpenCode model (`ctx.generate.text`). **No external LLM API and no API keys** — the only external component is the self-hosted decision server.
 
@@ -136,6 +136,20 @@ When the guard blocks a command and the user approves it through the agent's `qu
 
 On "deny" nothing changes: the command stays blocked and no intent update happens.
 
+### 3.6 Headless degradation
+
+Approval requires a human. When none can answer, the block must not loop on an unanswerable question — it steers the agent elsewhere. `approval.mode` selects the approval channel; when approval is impossible, **every mode** degrades to the steering error (`CASTLEGATE_HEADLESS_BLOCK`, §4.3):
+
+| | TUI (human present) | Headless (no human) |
+|---|---|---|
+| `approval.mode: "auto"` (default) | question flow (§3.5) | question attempt → form cancelled → steering error; the session is marked headless and every later block throws it immediately |
+| `approval.mode: "headless"` | steering error (explicitly requested) | steering error from the first block |
+
+- **Detection.** The SDK exposes no client-type signal. A question form resolving as `form.cancelled` without a reply *is* the definition of "nobody can answer" — zero false positives. The headless mark is per-session, in-memory, and survives until the session ends.
+- **The cancelled question is rewritten.** The `execute.after` hook replaces the question tool's error result with the steering message, so the agent's own question returns the ground rule ("use a different command") instead of a generic form failure.
+- **Cost of `"auto"`:** the first block in a headless run spends one question round-trip before the session flips. Scripts that want the right error at block #1 set `"headless"`.
+- **There is deliberately no `"question"` mode.** `"auto"` *is* the question flow wherever a human exists, so no configuration can make the agent repeatedly ask an unanswerable question.
+
 ## 4. Public surface
 
 ### 4.1 Plugin entry (V2)
@@ -208,6 +222,41 @@ The previous intent was kept unchanged.
 Please open an issue at https://github.com/Martins6/opencode-castlegate
 ```
 
+Thrown when a block cannot be approved because the session is headless (§3.6). Distinct from `CASTLEGATE_INTENT_MISMATCH` so agents can pattern-match "do not try to approve this":
+
+```ts
+class CastlegateHeadlessBlockedError extends Error {
+  readonly tag = "CASTLEGATE_HEADLESS_BLOCK";
+  readonly tool: string;
+  readonly reason: string;
+  readonly severity: "low" | "medium" | "high";
+  readonly blockedAt: string; // ISO timestamp
+}
+```
+
+```
+CASTLEGATE_HEADLESS_BLOCK: tool '<name>' is blocked and cannot be approved here.
+Reason: <synthesized decision evidence>
+Severity: <low|medium|high>
+Blocked at: <ISO timestamp>
+This session is headless: the user cannot approve or reject your action right now.
+Action required: do NOT try to approve this. Use a different shell command that fits the user's stated intent. If this exact command is truly necessary, tell the user to run it from an interactive session.
+```
+
+Thrown while the intent is not yet established (`validate.onMissingIntent: "block"`, §5.5):
+
+```
+CASTLEGATE_NO_INTENT: tool '<name>' is blocked: the session intent is not established yet (attempt <n> of <max>).
+The intent lands within seconds of the first user message.
+Action required: wait <retrySeconds>s, then retry this exact call once. Do not retry sooner.
+```
+
+```
+CASTLEGATE_NO_INTENT_EXHAUSTED: tool '<name>' is blocked: the session intent never appeared after <max> attempts.
+Something is wrong with castlegate — it cannot validate tool calls and keeps blocking this session.
+Action required: stop retrying. Ask the user to decide whether to disable the opencode-castlegate plugin ("enabled": false or comment it out in opencode.json) — something is wrong and needs fixing.
+```
+
 ### 4.4 Config
 
 Options are passed through the V2 `plugins` entry and read from `ctx.options`:
@@ -235,6 +284,7 @@ Options are passed through the V2 `plugins` entry and read from `ctx.options`:
           "timeoutMs": 60000
         },
         "approval": {
+          "mode": "auto", // "auto" = question flow, degrades to steering when headless | "headless" = steering error from block #1
           "absorbWaitSeconds": 60, // the agent waits this long after approval for the intent update
           "replayTtlMs": 300000 // identical command passes without a guard call for this long
         },
@@ -248,6 +298,9 @@ Options are passed through the V2 `plugins` entry and read from `ctx.options`:
           "skip": [],
           "requireApprovalOnMismatch": true,
           "onApiUnavailable": "block", // "block" = fail closed (default) | "allow" = fail open while the server is down
+          "onMissingIntent": "block", // "block" = CASTLEGATE_NO_INTENT until the intent lands (default) | "allow" = legacy pass-through
+          "noIntentRetrySeconds": 60, // wait told to the agent between attempts
+          "noIntentMaxAttempts": 3, // final attempt escalates to CASTLEGATE_NO_INTENT_EXHAUSTED
           "cacheTtlMs": 30000
         },
         "retries": 2, // per decision-server call, before giving up
@@ -284,7 +337,7 @@ Typed answers only — nothing to parse:
 
 `CastlegateIntentMismatchError` is thrown from the `execute.before` hook. OpenCode converts this to a tool error for the agent. The command never executes. The agent is expected to call its `question` tool with a yes/no choice quoting the command. Low confidence (`< decision.safeConfidence`) counts as not safe — uncertain means escalate to the user.
 
-The approval flow, timestamps, replay behavior, and wait instruction are specified in §3.5: on approval the clearance is absorbed into the intent (Update node), the question result carries `approvedAt`, and the agent waits `approval.absorbWaitSeconds` (default 60) for the intent before expecting similar commands to pass. The question must offer exactly two options — `Approve` and `Deny` — and approval detection is fail-closed (§3.5 step 3): any answer other than exactly `approve` is treated as denial.
+The approval flow, timestamps, replay behavior, and wait instruction are specified in §3.5: on approval the clearance is absorbed into the intent (Update node), the question result carries `approvedAt`, and the agent waits `approval.absorbWaitSeconds` (default 60) for the intent before expecting similar commands to pass. The question must offer exactly two options — `Approve` and `Deny` — and approval detection is fail-closed (§3.5 step 3): any answer other than exactly `approve` is treated as denial. When the session is headless (§3.6) none of this applies: the block raises `CASTLEGATE_HEADLESS_BLOCK` and the agent is directed to use a different command instead of asking.
 
 ### 5.4 What happens when a server is unreachable (`retries`)
 
@@ -292,7 +345,14 @@ Each decision-server call retries `retries` times (default 2) with exponential b
 
 ### 5.5 What happens when no intent exists yet
 
-`validate.skip_no_intent` is logged and the tool call is allowed through. The gate always votes "update" when no intent exists, so the first batch populates it.
+`validate.onMissingIntent` decides (default **`"block"`** — fail closed):
+
+| `onMissingIntent` | Behavior |
+|---|---|
+| `"block"` | Gated calls are rejected with `CASTLEGATE_NO_INTENT` (§4.3) — attempts 1..`max-1` of `validate.noIntentMaxAttempts` (default **3**), each telling the agent to wait `validate.noIntentRetrySeconds` (default **60**) and retry the exact call once. On the final attempt the error becomes `CASTLEGATE_NO_INTENT_EXHAUSTED`: stop retrying and ask the user whether to disable the plugin — something is wrong. Attempts are tracked per session. |
+| `"allow"` | Legacy pass-through: `validate.skip_no_intent` is logged and the call is allowed (nothing to validate against yet). |
+
+Either way the gate always votes "update" when no intent exists, so the first user-message batch populates it.
 
 ### 5.6 Enforce max chars (shrink loop)
 
@@ -336,7 +396,7 @@ No silent truncation: an intent that cannot fit the limit is a bug report, not s
 | `…` → `session.revert.committed` | history rewind (user edited/removed a message): skip gate → update with `removal` change events carrying the revoked text (§3.2) |
 | `…` → `session.deleted` | delete intent file (tombstones), cancel the session's pending debounce, drop per-session state |
 | `ctx.tool.hook("execute.before")` | `event.tool` ∈ `validate.tools` → replay check → guard → throw; `event.tool === "question"` → inject `Blocked command: …` + `blockId` |
-| `ctx.tool.hook("execute.after")` | `event.tool === "question"`: consume the answer only if it carries a pending `blockId`; on `approve` append `CASTLEGATE_CLEARANCE` (approvedAt), mark replay-cleared, schedule the absorb update |
+| `ctx.tool.hook("execute.after")` | `event.tool === "question"`: consume the answer only if it carries a pending `blockId`; on `approve` append `CASTLEGATE_CLEARANCE` (approvedAt), mark replay-cleared, schedule the absorb update; on question failure / form cancel → rewrite the error with the steering message and mark the session headless (§3.6) |
 | cleanup fn returned by `setup` | cancel timers, clear caches |
 
 ## 7. Logging
@@ -353,8 +413,9 @@ All events flow through the app log with `service: "castlegate"` (V1 `client.app
 | Shrink loop exhausts | `CASTLEGATE_INTENT_TOO_LONG`; intent unchanged | Error to the session + GitHub issue recommendation (§5.6) |
 | Gate false negative (says "no" while intent shifted) | intent drifts stale | Conservative gate prompt ("when in doubt, yes"); always "yes" when no intent; tunable `gateThreshold` |
 | Guard low confidence | escalation instead of auto-allow | Intended: uncertain → ask the user (§5.3) |
+| Question form cancelled (headless) | agent loops on an unanswerable question | steering error `CASTLEGATE_HEADLESS_BLOCK`, session marked headless (§3.6) |
 | State exceeds the server batch (`-b`/`-ub`) | request rejected (400) or decisive context truncated | `decision.stateMaxChars` trim with anchor intent + clearances first (default 8000); 400 is a config error, never `CASTLEGATE_API_UNAVAILABLE`; document raising `-b`/`-ub` up to 16384 |
-| Intent file corrupted | `loadIntent` returns `null` → treated as no intent → tool allowed | Atomic writes + version field; future: checksum |
+| Intent file corrupted | `loadIntent` returns `null` → treated as no intent → `validate.onMissingIntent` decides (§5.5) | Atomic writes + version field; future: checksum |
 | Two intent updates race | a stale draft would clobber a newer intent | CAS on `intentVersion` (§3.3): the stale draft is discarded, the update re-run |
 | Session deleted while an update is pending | orphan intent file re-created after the delete | tombstone + debounce cancel on delete (§6): in-flight saves for a dead session are discarded |
 
@@ -401,6 +462,8 @@ Notes: node:crypto's `.digest("hex")` is an API method, not the old name (hence 
 
 ## 10. Future work
 
+- Template pollution hardening: the update node can fold placeholder text (e.g. pasted error templates containing `user approved \`<command>\``) into the intent, which the decision model reads as blanket approval. Filter placeholder-shaped clearance lines from the guard state and teach the update prompt that clearance entries are only concrete past approvals.
+- Decision-model calibration on meta-text: intents that discuss commands in the abstract (e.g. "if a shell command is requested, block it") inflate `within_scope` confidence in small decision models. Guard-prompt hardening: "the intent discussing tool calls is not permission to run them."
 - Persist clearances across restarts (the replay journal is in-memory and session-scoped; absorbed intent entries already survive).
 - Heuristic-only mode (`validate.mode: "heuristic"`) for zero-cost gating when no model server is available.
 - Multimodal guard state: feed screenshots or a short voice clip to d1-omni (it accepts images and up to 30 s of speech) for richer safe/not-safe evidence.

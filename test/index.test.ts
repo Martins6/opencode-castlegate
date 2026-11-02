@@ -436,3 +436,291 @@ test("session.deleted removes the intent file", async () => {
   await cleanup();
   fake.restore();
 });
+
+// ── Headless degradation (SPEC §3.6) ─────────────────────────────────────
+
+async function seedIntent(dir: string, sessionID: string): Promise<void> {
+  await fs.mkdir(path.join(dir, ".opencode/intent"), { recursive: true });
+  await fs.writeFile(
+    path.join(dir, `.opencode/intent/${sessionID}.md`),
+    "---\nintentVersion: 1\nlastMessageId: null\nupdatedAt: 2026-10-30T00:00:00.000Z\ncharCount: 20\n---\ngoal: read-only exploration",
+    "utf8",
+  );
+}
+
+test("mode headless: the first block throws the steering error and opens no block", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  await seedIntent(dir, "ses_h1");
+  const fake = makeFakeCtx({
+    directory: dir,
+    decision: { scope: "out_of_scope", confidence: 0.95, score: 1 },
+    options: { approval: { mode: "headless" } },
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  await assert.rejects(
+    () =>
+      fake.runHook("execute.before", {
+        tool: "shell",
+        input: { command: "sleep 3" },
+        sessionID: "ses_h1",
+        messageID: "m",
+        id: "c1",
+      }),
+    (err: unknown) => {
+      assert.ok(isCastlegateError(err));
+      assert.equal((err as { tag: string }).tag, "CASTLEGATE_HEADLESS_BLOCK");
+      assert.match(msg(err), /do NOT try to approve this/);
+      assert.doesNotMatch(msg(err), /Block id/); // no approval path exists
+      return true;
+    },
+  );
+  await cleanup();
+  fake.restore();
+});
+
+test("auto: a failed block-related question rewrites the error, marks headless, and later blocks steer immediately", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  await seedIntent(dir, "ses_h2");
+  const fake = makeFakeCtx({
+    directory: dir,
+    decision: { scope: "out_of_scope", confidence: 0.95, score: 1 },
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  // 1. Block opens a question-flow block (mismatch error with blockId).
+  let blockId = "";
+  await fake
+    .runHook("execute.before", {
+      tool: "shell",
+      input: { command: "sleep 3" },
+      sessionID: "ses_h2",
+      messageID: "m",
+      id: "c1",
+    })
+    .catch((err: unknown) => {
+      assert.ok(isCastlegateError(err));
+      assert.equal((err as { tag: string }).tag, "CASTLEGATE_INTENT_MISMATCH");
+      blockId = (/Block id: (\S+)/.exec(msg(err)) ?? [])[1] ?? "";
+    });
+  assert.match(blockId, /^cb_/);
+
+  // 2. The question fails (headless: form cancelled) → error rewritten.
+  const qEvent = {
+    tool: "question",
+    input: { questions: [{ question: `Approve? (${blockId})`, options: [{ label: "Approve" }, { label: "Deny" }] }] },
+    sessionID: "ses_h2",
+    messageID: "m",
+    id: "c2",
+    status: "error",
+    error: { message: "form cancelled" },
+  };
+  await fake.runHook("execute.after", qEvent);
+  const rewritten = (qEvent as { error: { message: string } }).error.message;
+  assert.match(rewritten, /CASTLEGATE_HEADLESS_BLOCK/);
+  assert.match(rewritten, /do NOT try to approve this/);
+  assert.match(rewritten, /do NOT try to approve this[\s\S]*different shell command/);
+
+  // 3. The next block steers immediately — no question flow, no blockId.
+  await assert.rejects(
+    () =>
+      fake.runHook("execute.before", {
+        tool: "shell",
+        input: { command: "sleep 5" },
+        sessionID: "ses_h2",
+        messageID: "m",
+        id: "c3",
+      }),
+    (err: unknown) => {
+      assert.equal((err as { tag: string }).tag, "CASTLEGATE_HEADLESS_BLOCK");
+      assert.doesNotMatch(msg(err), /Block id/);
+      return true;
+    },
+  );
+  await cleanup();
+  fake.restore();
+});
+
+test("auto: a successful approval never marks the session headless", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  await seedIntent(dir, "ses_h3");
+  const fake = makeFakeCtx({
+    directory: dir,
+    decision: { scope: "out_of_scope", confidence: 0.95, score: 1 },
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  let blockId = "";
+  await fake
+    .runHook("execute.before", {
+      tool: "shell",
+      input: { command: "sleep 3" },
+      sessionID: "ses_h3",
+      messageID: "m",
+      id: "c1",
+    })
+    .catch((err: unknown) => {
+      blockId = (/Block id: (\S+)/.exec(msg(err)) ?? [])[1] ?? "";
+    });
+
+  const qEvent = {
+    tool: "question",
+    input: { questions: [{ question: `Approve? (${blockId})` }] },
+    sessionID: "ses_h3",
+    messageID: "m",
+    id: "c2",
+    status: "completed",
+    result: { content: [{ type: "text", text: 'answered: "q"="Approve"' }] },
+  };
+  await fake.runHook("execute.after", qEvent);
+  assert.match(JSON.stringify(qEvent), /CASTLEGATE_CLEARANCE/);
+
+  // A different command still goes through the normal question flow.
+  await assert.rejects(
+    () =>
+      fake.runHook("execute.before", {
+        tool: "shell",
+        input: { command: "sleep 9" },
+        sessionID: "ses_h3",
+        messageID: "m",
+        id: "c3",
+      }),
+    (err: unknown) => {
+      assert.equal((err as { tag: string }).tag, "CASTLEGATE_INTENT_MISMATCH");
+      return true;
+    },
+  );
+  await cleanup();
+  fake.restore();
+});
+
+test("a failed question without a pending block never marks the session", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  await seedIntent(dir, "ses_h4");
+  const fake = makeFakeCtx({
+    directory: dir,
+    decision: { scope: "out_of_scope", confidence: 0.95, score: 1 },
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  // Unrelated question fails (no blockId anywhere) — must be ignored.
+  await fake.runHook("execute.after", {
+    tool: "question",
+    input: { questions: [{ question: "Which theme do you prefer?" }] },
+    sessionID: "ses_h4",
+    messageID: "m",
+    id: "c1",
+    status: "error",
+    error: { message: "form cancelled" },
+  });
+
+  // A real block still uses the question flow.
+  await assert.rejects(
+    () =>
+      fake.runHook("execute.before", {
+        tool: "shell",
+        input: { command: "sleep 3" },
+        sessionID: "ses_h4",
+        messageID: "m",
+        id: "c2",
+      }),
+    (err: unknown) => {
+      assert.equal((err as { tag: string }).tag, "CASTLEGATE_INTENT_MISMATCH");
+      return true;
+    },
+  );
+  await cleanup();
+  fake.restore();
+});
+
+// ── No-intent fail-closed (SPEC §5.5) ───────────────────────────────────
+
+test("onMissingIntent=block: bounded NO_INTENT retries, then EXHAUSTED", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir(); // no intent file at all
+  const fake = makeFakeCtx({ directory: dir });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  const call = (id: string) =>
+    fake.runHook("execute.before", {
+      tool: "shell",
+      input: { command: "ls" },
+      sessionID: "ses_ni",
+      messageID: "m",
+      id,
+    });
+
+  await assert.rejects(() => call("c1"), (err: unknown) => {
+    assert.equal((err as { tag: string }).tag, "CASTLEGATE_NO_INTENT");
+    assert.match(msg(err), /\(attempt 1 of 3\)/);
+    assert.match(msg(err), /wait 60s, then retry this exact call once/);
+    return true;
+  });
+  await assert.rejects(() => call("c2"), (err: unknown) => {
+    assert.equal((err as { tag: string }).tag, "CASTLEGATE_NO_INTENT");
+    assert.match(msg(err), /\(attempt 2 of 3\)/);
+    return true;
+  });
+  await assert.rejects(() => call("c3"), (err: unknown) => {
+    assert.equal((err as { tag: string }).tag, "CASTLEGATE_NO_INTENT_EXHAUSTED");
+    assert.match(msg(err), /stop retrying/);
+    assert.match(msg(err), /disable the opencode-castlegate plugin/);
+    return true;
+  });
+  await cleanup();
+  fake.restore();
+});
+
+test("onMissingIntent=allow restores the pass-through behavior", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  const fake = makeFakeCtx({
+    directory: dir,
+    options: { validate: { onMissingIntent: "allow" } },
+  });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  await fake.runHook("execute.before", {
+    tool: "shell",
+    input: { command: "ls" },
+    sessionID: "ses_ni2",
+    messageID: "m",
+    id: "c1",
+  }); // must not throw
+  await cleanup();
+  fake.restore();
+});
+
+test("no-intent attempts are tracked per session", async () => {
+  setScheduleTestHooks({ debounceMs: 5 });
+  const dir = await tmpDir();
+  const fake = makeFakeCtx({ directory: dir });
+  const cleanup = await (castlegate.setup as (c: unknown) => Promise<() => Promise<void>>)(fake.ctx);
+
+  const call = (sessionID: string, id: string) =>
+    fake.runHook("execute.before", {
+      tool: "shell",
+      input: { command: "ls" },
+      sessionID,
+      messageID: "m",
+      id,
+    });
+
+  await assert.rejects(() => call("ses_a", "c1"), (err: unknown) =>
+    (err as { tag: string }).tag === "CASTLEGATE_NO_INTENT",
+  );
+  await assert.rejects(() => call("ses_a", "c2"), (err: unknown) =>
+    (err as { tag: string }).tag === "CASTLEGATE_NO_INTENT",
+  );
+  // A different session starts its own count.
+  await assert.rejects(() => call("ses_b", "c3"), (err: unknown) => {
+    assert.match(msg(err), /\(attempt 1 of 3\)/);
+    return true;
+  });
+  await cleanup();
+  fake.restore();
+});

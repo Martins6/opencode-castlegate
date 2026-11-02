@@ -23,6 +23,9 @@ import {
   CastlegateIntentMismatchError,
   CastlegateApiUnavailableError,
   CastlegateIntentTooLongError,
+  CastlegateHeadlessBlockedError,
+  CastlegateNoIntentError,
+  CastlegateNoIntentExhaustedError,
   isCastlegateError,
 } from "./errors.ts";
 import {
@@ -50,6 +53,8 @@ interface SessionState {
   inFlight: boolean;
   /** messageID -> user text (source for edit/removal oldText, SPEC §3.2 revocations). */
   userTexts: Map<string, string>;
+  /** Gated calls blocked by CASTLEGATE_NO_INTENT (SPEC §5.5). */
+  noIntentAttempts: number;
 }
 
 function parseModelRef(ref: string): { providerID: string; id: string } {
@@ -127,7 +132,7 @@ export default Plugin.define({
     const state = (sessionID: string): SessionState => {
       let st = states.get(sessionID);
       if (!st) {
-        st = { queue: [], debounce: undefined, inFlight: false, userTexts: new Map() };
+        st = { queue: [], debounce: undefined, inFlight: false, userTexts: new Map(), noIntentAttempts: 0 };
         states.set(sessionID, st);
       }
       return st;
@@ -369,8 +374,36 @@ export default Plugin.define({
       }
 
       if (!file || file.body.trim() === "") {
-        await log.event("validate.skip_no_intent", { sessionID: event.sessionID, tool: event.tool });
-        return;
+        if (cfg.validate.onMissingIntent === "allow") {
+          await log.event("validate.skip_no_intent", { sessionID: event.sessionID, tool: event.tool });
+          return;
+        }
+        // Fail closed (SPEC §5.5): bounded retries, then tell the agent to
+        // escalate to the user about the plugin itself.
+        const st = state(event.sessionID);
+        st.noIntentAttempts += 1;
+        if (st.noIntentAttempts >= cfg.validate.noIntentMaxAttempts) {
+          await log.event("validate.no_intent_exhausted", {
+            sessionID: event.sessionID,
+            tool: event.tool,
+            attempt: st.noIntentAttempts,
+          });
+          throw new CastlegateNoIntentExhaustedError({
+            tool: event.tool,
+            maxAttempts: cfg.validate.noIntentMaxAttempts,
+          });
+        }
+        await log.event("validate.no_intent_block", {
+          sessionID: event.sessionID,
+          tool: event.tool,
+          attempt: st.noIntentAttempts,
+        });
+        throw new CastlegateNoIntentError({
+          tool: event.tool,
+          attempt: st.noIntentAttempts,
+          maxAttempts: cfg.validate.noIntentMaxAttempts,
+          retrySeconds: cfg.validate.noIntentRetrySeconds,
+        });
       }
 
       try {
@@ -395,10 +428,30 @@ export default Plugin.define({
           return;
         }
 
+        const headless = cfg.approval.mode === "headless" || store.isHeadless(event.sessionID);
+        if (headless) {
+          // No approval path exists (SPEC §3.6): steer the agent elsewhere.
+          await log.event("guard.block", {
+            sessionID: event.sessionID,
+            tool: event.tool,
+            reason: verdict.reason,
+            severity: verdict.severity,
+            headless: true,
+          });
+          throw new CastlegateHeadlessBlockedError({
+            tool: event.tool,
+            reason: verdict.reason,
+            severity: verdict.severity,
+            blockedAt: new Date().toISOString(),
+          });
+        }
+
         const block = openBlock({
           sessionId: event.sessionID,
           tool: event.tool,
           args,
+          reason: verdict.reason,
+          severity: verdict.severity,
         });
         store.add(block);
         await log.event("guard.block", {
@@ -407,6 +460,7 @@ export default Plugin.define({
           blockId: block.blockId,
           reason: verdict.reason,
           severity: verdict.severity,
+          headless: false,
         });
         throw new CastlegateIntentMismatchError({
           tool: event.tool,
@@ -465,10 +519,30 @@ export default Plugin.define({
       const block = store.findForPrompt(event.sessionID, questionText(event.input));
       if (!block) return; // unrelated question — never touches guard state (§5.7)
 
+      // Headless detection (SPEC §3.6): a block-related question that cannot
+      // complete means nobody can answer. Rewrite the failure into the
+      // steering message and mark the session headless for good.
+      if (event.status === "error") {
+        store.markHeadless(event.sessionID);
+        store.delete(block.blockId);
+        const steering = new CastlegateHeadlessBlockedError({
+          tool: block.tool,
+          reason: block.reason ?? "decision evidence unavailable",
+          severity: block.severity ?? "medium",
+          blockedAt: new Date().toISOString(),
+        });
+        (event as unknown as { error: { message: string } }).error.message = steering.message;
+        await log.event("question.headless_detected", {
+          sessionID: event.sessionID,
+          blockId: block.blockId,
+        });
+        return;
+      }
+
       const outcome = consumeQuestionResult(
         store,
         block,
-        event.status === "completed" ? event.result : event.error,
+        event.result,
         Date.now,
         cfg.approval.absorbWaitSeconds,
       );
