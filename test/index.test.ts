@@ -167,9 +167,9 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) throw new Error("waitFor timed out");
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -355,6 +355,12 @@ test("approval flow: question transforms, clearance lands, replay allows", async
   assert.match(joined, /CASTLEGATE_CLEARANCE: approvedAt \S+ — the intent absorbs this clearance within 60s\./);
 
   // 4. The identical command now passes without a guard call (replay).
+  //    Wait for the background absorb update from step 3 to land first so its
+  //    LLM call does not fall inside the replay snapshot below.
+  const intentFile = path.join(dir, ".opencode/intent/ses_q.md");
+  await waitFor(async () =>
+    (await fs.readFile(intentFile, "utf8").catch(() => "")).includes("Approved clearances"),
+  );
   const fetchCountBefore = fake.generateCalls.length;
   await fake.runHook("execute.before", {
     tool: "shell",
