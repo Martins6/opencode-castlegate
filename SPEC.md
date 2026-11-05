@@ -306,7 +306,6 @@ Options are passed through the V2 `plugins` entry and read from `ctx.options`:
         "validate": {
           "tools": ["shell"], // v2 tool name (v1: "bash")
           "skip": [],
-          "requireApprovalOnMismatch": true,
           "onApiUnavailable": "block", // "block" = fail closed (default) | "allow" = fail open while the server is down
           "onMissingIntent": "block", // "block" = CASTLEGATE_NO_INTENT until the intent lands (default) | "allow" = legacy pass-through
           "noIntentRetrySeconds": 60, // wait told to the agent between attempts
@@ -343,9 +342,9 @@ Typed answers only — nothing to parse:
 - Guard (`choice`): `{ choice: "within_scope" | "out_of_scope", probabilities, confidence }`.
 - Guard (`score`): expected severity level 0..2 + distribution + confidence.
 
-### 5.3 What happens on guard "not safe" when `requireApprovalOnMismatch: true`
+### 5.3 What happens on guard "not safe"
 
-`CastlegateIntentMismatchError` is thrown from the `execute.before` hook. OpenCode converts this to a tool error for the agent. The command never executes. The agent is expected to call its `question` tool with a yes/no choice quoting the command. Low confidence (`< decision.safeConfidence`) counts as not safe — uncertain means escalate to the user.
+`CastlegateIntentMismatchError` is thrown from the `execute.before` hook. OpenCode converts this to a tool error for the agent. The command never executes. The agent is expected to call its `question` tool with a yes/no choice quoting the command. Low confidence (`< decision.safeConfidence`) counts as not safe — uncertain means escalate to the user. A mismatch is never silently allowed: the only outcomes are user approval or a block.
 
 The approval flow, timestamps, replay behavior, and wait instruction are specified in §3.5: on approval the clearance is absorbed into the intent (Update node), the question result carries `approvedAt`, and the agent waits `approval.absorbWaitSeconds` (default 60) for the intent before expecting similar commands to pass. The question must offer exactly two options — `Approve` and `Deny` — and approval detection is fail-closed (§3.5 step 3): any answer other than exactly `approve` is treated as denial. When the session is headless (§3.6) none of this applies: the block raises `CASTLEGATE_HEADLESS_BLOCK` and the agent is directed to use a different command instead of asking.
 
