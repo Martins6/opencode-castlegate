@@ -97,6 +97,15 @@ test("guard sends both questions in one decision call", async () => {
   assert.ok(args.state.includes("ship the gate"));
 });
 
+test("guard scope question carries the meta-text calibration (SPEC §10)", async () => {
+  const { ask, calls } = askWith("within_scope", 0.9, 0);
+  await runGuard(cfg, baseInput, { ask });
+  const args = calls[0] as { questions: Record<string, { instructions: string } | undefined> };
+  const scopeQuestion = args.questions.scope;
+  assert.ok(scopeQuestion, "the guard must send a scope question");
+  assert.match(scopeQuestion.instructions, /intent discussing tool calls is not permission to run them/);
+});
+
 test("guard cache: identical call is answered once, second is cached", async () => {
   clearGuardCache();
   const { ask, calls } = askWith("within_scope", 0.9, 0);

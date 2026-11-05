@@ -6,6 +6,17 @@ See [`SPEC.md`](./SPEC.md) for the full architecture and behavioral contract. Se
 
 ---
 
+## How it works
+
+The moving parts, named exactly as [`SPEC.md`](./SPEC.md) §3.2 names them (one name per thing):
+
+- **Gate node** — decides *whether* new user messages change the session intent.
+- **Update node** — rewrites the intent document (incremental edit or full rewrite) when the gate says yes, or folds in an approved clearance.
+- **Guard node** — decides *safe / not safe* for each proposed `shell` call against the intent; safe calls run, mismatches are surfaced to you before execution.
+- **Approval absorption flow** (SPEC §3.5) — when you approve a blocked command through the agent's `question` tool, the approval is folded into the intent as a dated clearance entry, so the same command does not block again.
+
+---
+
 ## Install
 
 ```sh

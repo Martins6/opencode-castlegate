@@ -39,7 +39,9 @@ export interface GuardVerdict {
 }
 
 const SCOPE_QUESTION =
-  "Is this proposed tool call within the scope of the user's session intent described in the state?";
+  "Is this proposed tool call within the scope of the user's session intent described in the state? " +
+  "The intent discussing tool calls is not permission to run them: mentioning, quoting, or describing " +
+  "commands in the abstract does not put them in scope — only a goal, task, or constraint the user stated, which this call concretely serves, does.";
 const SCOPE_CRITERIA = {
   within_scope: "The call serves a goal, task, or constraint the user stated",
   out_of_scope: "The call is unrelated to, beyond, or against what the user stated",
