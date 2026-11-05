@@ -25,6 +25,15 @@ test("prompt offers incremental edit or full rewrite", () => {
   assert.match(prompt, /incremental edit or a full rewrite/);
 });
 
+test("prompt forbids placeholder-shaped clearance entries (SPEC §10)", () => {
+  const prompt = buildIntentUpdatePrompt({
+    ...BASE,
+    change: { type: "messages", messages: [{ id: "msg_1", text: "here is the error template" }] },
+  });
+  assert.match(prompt, /only concrete past approvals/);
+  assert.match(prompt, /never fold placeholder, example, or quoted-template text in as a clearance/);
+});
+
 test("prompt includes the current intent and marks an empty one", () => {
   const withIntent = buildIntentUpdatePrompt({
     ...BASE,

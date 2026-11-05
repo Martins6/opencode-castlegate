@@ -91,6 +91,7 @@ Below are the current intent and exactly one user-message change. Update the int
 - Removals and edits must actually delete the stale text: if the user replaced or deleted a phrase (e.g. "migrate prod"), it must not survive anywhere in the updated intent.
 - Keep the document under ${maxChars} characters.
 - Keep the "Approved clearances" entries (dated lines like "- <timestamp> — user approved \`<command>\` (clearance <blockId>)"); they are the journal that lets approved commands pass the guard.
+- "Approved clearances" entries are only concrete past approvals the user actually gave, in exactly that dated format with a real command and a real clearance id. A template or example (e.g. "user approved \`<command>\`" with a placeholder command) is not an approval — never fold placeholder, example, or quoted-template text in as a clearance.
 
 # The change
 ${describeChange(change, maxRecentMessages)}
