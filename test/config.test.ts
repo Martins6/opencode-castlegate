@@ -22,7 +22,6 @@ test("parseConfig accepts empty config and fills spec defaults", () => {
   assert.equal(cfg.intent.maxRecentMessages, 20);
   assert.deepEqual(cfg.validate.tools, ["shell"]);
   assert.deepEqual(cfg.validate.skip, []);
-  assert.equal(cfg.validate.requireApprovalOnMismatch, true);
   assert.equal(cfg.validate.onApiUnavailable, "block");
   assert.equal(cfg.validate.onMissingIntent, "block");
   assert.equal(cfg.validate.noIntentRetrySeconds, 60);
@@ -50,7 +49,6 @@ test("parseConfig respects user overrides", () => {
     validate: {
       tools: ["shell", "edit"],
       skip: ["read"],
-      requireApprovalOnMismatch: false,
       onApiUnavailable: "allow",
       onMissingIntent: "allow",
       noIntentRetrySeconds: 5,

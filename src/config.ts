@@ -39,7 +39,6 @@ export type IntentConfig = z.infer<typeof IntentConfigSchema>;
 export const ValidateConfigSchema = z.object({
   tools: z.array(z.string()).default(["shell"]), // v2 tool name (v1: "bash")
   skip: z.array(z.string()).default([]),
-  requireApprovalOnMismatch: z.boolean().default(true),
   onApiUnavailable: z.enum(["block", "allow"]).default("block"),
   // Gated call before the intent exists: "block" fails closed with
   // CASTLEGATE_NO_INTENT (SPEC §5.5); "allow" restores the legacy pass-through.
@@ -82,7 +81,6 @@ export const CastlegateConfigSchema = z.object({
   validate: ValidateConfigSchema.default(() => ({
     tools: ["shell"] as string[],
     skip: [] as string[],
-    requireApprovalOnMismatch: true,
     onApiUnavailable: "block" as const,
     onMissingIntent: "block" as const,
     noIntentRetrySeconds: 60,
